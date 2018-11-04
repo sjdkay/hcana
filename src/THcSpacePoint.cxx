@@ -1,10 +1,9 @@
-///////////////////////////////////////////////////////////////////////////////
-//                                                                           //
-// THcSpacePoint                                                                 //
-//                                                                           //
-// Class representing a single hit for the VDC                               //
-//                                                                           //
-///////////////////////////////////////////////////////////////////////////////
+/** \class THcSpacePoint
+    \ingroup DetSupport
+
+    \brief Class representing a single hit DC
+
+*/
 
 #include "THcSpacePoint.h"
 

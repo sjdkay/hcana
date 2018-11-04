@@ -1,12 +1,9 @@
-///////////////////////////////////////////////////////////////////////////////
-//                                                                           //
-// THcDCLookupTTDConv                                                        //
-//                                                                           //
-// Upon initialization needs to be given the lookup table for time           //
-// to distance conversion.                                                   //
-//                                                                           //
-///////////////////////////////////////////////////////////////////////////////
+/** \class THcDCLookupTTDConv
+    \ingroup DetSupport
 
+    \brief Drift time to distance conversion via lookup table.
+
+*/
 #include "THcDCLookupTTDConv.h"
 
 ClassImp(THcDCLookupTTDConv)
@@ -38,7 +35,9 @@ THcDCLookupTTDConv::~THcDCLookupTTDConv()
 //______________________________________________________________________________
 Double_t THcDCLookupTTDConv::ConvertTimeToDist(Double_t time)
 {
-  // Lookup in table
+  /**
+     Convert drift time to a distance from the wire by looking up in a table.
+  */
   Int_t ib = (time-fT0)/fBinSize;
   Double_t frac = 0;
   if(ib >= 0 && ib+1 < fNumBins) {
@@ -47,14 +46,11 @@ Double_t THcDCLookupTTDConv::ConvertTimeToDist(Double_t time)
   } else if (ib+1 >= fNumBins) {
     frac = 1.0;
   }
-  
+
   Double_t drift_distance = fMaxDriftDistance * frac;
 
-  // Engine subtracts a hdc_card_delay from this.  Seems
-  // to be zero in the PARAM files, bit is it always?  Delay implies
-  // time?  Whis is a time subtracted from a distance?
 
   return(drift_distance);
-}  
+}
 
 ////////////////////////////////////////////////////////////////////////////////

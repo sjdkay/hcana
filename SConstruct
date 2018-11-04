@@ -4,160 +4,137 @@
 
 import os
 import sys
-import platform
-import commands
+#import platform
+#import commands
 import SCons
-
-def rootcint(target,source,env):
-	"""Executes the ROOT dictionary generator over a list of headers."""
-	dictname = target[0]
-	headers = ""
-	cpppath = env.subst('$_CCCOMCOM')
-	ccflags = env.subst('$CCFLAGS')
-	rootcint = env.subst('$ROOTCINT')
-	print "Doing rootcint call now ..."
-	for f in source:
-		headers += str(f) + " "
-	command = rootcint + " -f %s -c -pthread -fPIC %s %s" % (dictname,cpppath,headers)
-	print ('RootCint Command = %s\n' % command)
-	ok = os.system(command)
-	return ok
-
-baseenv = Environment(ENV = os.environ)
-#dict = baseenv.Dictionary()
-#keys = dict.keys()
-#keys.sort()
-#for key in keys:
-#	print "Construction variable = '%s', value = '%s'" % (key, dict[key])
+import subprocess
 
 ####### Check SCons version ##################
 print('!!! Building the Hall C analyzer and libraries with SCons requires')
-print('!!! SCons version 2.1.0 or newer.')
-EnsureSConsVersion(2,1,0)
+print('!!! SCons version 2.5.0 or newer.')
+EnsureSConsVersion(2,5,0)
+
+baseenv = Environment(ENV = os.environ,tools=["default"],toolpath=['podd/site_scons'])
 
 ####### Hall A Build Environment #############
 #
-baseenv.Append(MAIN_DIR= Dir('.').abspath)
-baseenv.Append(HC_DIR= baseenv.subst('$MAIN_DIR'))
-baseenv.Append(HC_SRC= baseenv.subst('$HC_DIR')+'/src ') 
-baseenv.Append(HA_DIR= baseenv.subst('$HC_DIR')+'/podd ')
-baseenv.Append(HA_SRC= baseenv.subst('$HA_DIR')+'/src ') 
-baseenv.Append(HA_DC= baseenv.subst('$HA_DIR')+'/hana_decode ') 
-baseenv.Append(HA_SCALER= baseenv.subst('$HA_DIR')+'/hana_scaler ') 
-baseenv.Append(MAJORVERSION = '1')
-baseenv.Append(MINORVERSION = '5')
-baseenv.Append(PATCH = '28')
+baseenv.Append(HEAD_DIR= Dir('.').abspath)
+baseenv.Append(HC_DIR= baseenv.subst('$HEAD_DIR'))
+baseenv.Append(HC_SRC= baseenv.subst('$HC_DIR')+'/src')
+baseenv.Append(HA_DIR= baseenv.subst('$HC_DIR')+'/podd')
+baseenv.Append(MAIN_DIR= baseenv.subst('$HEAD_DIR'))
+baseenv.Append(HA_SRC= baseenv.subst('$HA_DIR')+'/src')
+baseenv.Append(HA_DC= baseenv.subst('$HA_DIR')+'/hana_decode')
+baseenv.Append(MAJORVERSION = '0')
+baseenv.Append(MINORVERSION = '90')
+baseenv.Append(PATCH = '0')
 baseenv.Append(SOVERSION = baseenv.subst('$MAJORVERSION')+'.'+baseenv.subst('$MINORVERSION'))
 baseenv.Append(VERSION = baseenv.subst('$SOVERSION')+'.'+baseenv.subst('$PATCH'))
 baseenv.Append(EXTVERS = '')
-baseenv.Append(HA_VERSION = baseenv.subst('$VERSION')+baseenv.subst('$EXTVERS'))
-print "Hall C Main Directory = %s" % baseenv.subst('$HC_DIR')
-print "Hall C Source Directory = %s" % baseenv.subst('$HC_SRC')
-print "Hall A Main Directory = %s" % baseenv.subst('$HA_DIR')
-print "Software Version = %s" % baseenv.subst('$VERSION')
+baseenv.Append(HC_VERSION = baseenv.subst('$VERSION')+baseenv.subst('$EXTVERS'))
+print ("Hall C Main Directory = %s" % baseenv.subst('$HC_DIR'))
+print ("Hall C Source Directory = %s" % baseenv.subst('$HC_SRC'))
+print ("Hall A Main Directory = %s" % baseenv.subst('$HA_DIR'))
+print ("Software Version = %s" % baseenv.subst('$VERSION'))
 ivercode = 65536*int(float(baseenv.subst('$SOVERSION')))+ 256*int(10*(float(baseenv.subst('$SOVERSION'))-int(float(baseenv.subst('$SOVERSION')))))+ int(float(baseenv.subst('$PATCH')))
 baseenv.Append(VERCODE = ivercode)
-baseenv.Append(CPPPATH = ['$HC_SRC','$HA_SRC','$HA_DC','$HA_SCALER'])
+baseenv.Append(CPPPATH = ['$HC_SRC','$HA_SRC','$HA_DC'])
 
-proceed = "1" or "y" or "yes" or "Yes" or "Y"
-######## Configure Section #######
-
+sys.path.insert(1,baseenv.subst('$HA_DIR'+'/site_scons'))
 import configure
-configure.config(baseenv,ARGUMENTS)
+from rootcint import rootcint
 
-Export('baseenv')
-
-conf = Configure(baseenv)
-
-if not conf.CheckCXX():
-	print('!!! Your compiler and/or environment is not correctly configured.')
-	Exit(0)
-
-if not conf.CheckFunc('printf'):
-       	print('!! Your compiler and/or environment is not correctly configured.')
-       	Exit(0)
-
-if baseenv.subst('$CHECKHEADERS')==proceed:
-	system_header_list = ['arpa/inet.h','errno.h','assert.h','netdb.h','netinet/in.h','pthread.h','signal.h','stddef.h','stdio.h','stdlib.h','string.h','strings.h','sys/ioctl.h','sys/socket.h','sys/time.h','sys/types.h','time.h','unistd.h','memory.h','math.h','limits.h']
-
-	for header_file in system_header_list:
-		if not conf.CheckHeader(header_file):
-			print('!! Header file %s not found.' % header_file)
-			Exit(0)
-
-baseenv = conf.Finish()
-
-######## ROOT Dictionaries #########
-baseenv.Append(ROOTCONFIG = 'root-config')
-baseenv.Append(ROOTCINT = 'rootcint')
-
-try:
-        baseenv.ParseConfig('$ROOTCONFIG --cflags')
-        baseenv.ParseConfig('$ROOTCONFIG --libs')
-        baseenv.MergeFlags('-fPIC')
-except OSError:
-        try:
-		baseenv.Replace(ROOTCONFIG = baseenv['ENV']['ROOTSYS'] + '/bin/root-config')
-		baseenv.Replace(ROOTCINT = baseenv['ENV']['ROOTSYS'] + '/bin/rootcint')
-		baseenv.ParseConfig('$ROOTCONFIG --cflags')
-		baseenv.ParseConfig('$ROOTCONFIG --libs')
-		baseenv.MergeFlags('-fPIC')
-	except KeyError:
-                print('!!! Cannot find ROOT.  Check if root-config is in your PATH.')
-                Exit(1)
+configure.FindROOT(baseenv)
+# If EVIO is set up, use it. Otherwise the Podd submodule will build it
+# and we will pick it up from there
+configure.FindEVIO(baseenv, build_it = False, fail_if_missing = False)
 
 bld = Builder(action=rootcint)
 baseenv.Append(BUILDERS = {'RootCint': bld})
 
 ######## cppcheck ###########################
 
-def which(program):
-	import os
-	def is_exe(fpath):
-		return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-	
-	fpath, fname = os.path.split(program)
-	if fpath:
-		if is_exe(program):
-			return program
-	else:
-		for path in os.environ["PATH"].split(os.pathsep):
-			path = path.strip('"')
-			exe_file = os.path.join(path, program)
-			if is_exe(exe_file):
-				return exe_file
-	return None
-
+proceed = "1" or "y" or "yes" or "Yes" or "Y"
 if baseenv.subst('$CPPCHECK')==proceed:
-	is_cppcheck = which('cppcheck')
-	print "Path to cppcheck is %s\n" % is_cppcheck
+    is_cppcheck = which('cppcheck')
+    print ("Path to cppcheck is %s\n" % is_cppcheck)
 
-	if(is_cppcheck == None):
-		print('!!! cppcheck not found on this system.  Check if cppcheck is installed and in your PATH.')
-		Exit(1)
-	else:
-		cppcheck_command = baseenv.Command('cppcheck_report.txt',[],"cppcheck --quiet --enable=all src/ 2> $TARGET")
-		baseenv.AlwaysBuild(cppcheck_command)
+    if(is_cppcheck == None):
+        print('!!! cppcheck not found on this system.  Check if cppcheck is installed and in your PATH.')
+        Exit(1)
+    else:
+        cppcheck_command = baseenv.Command('cppcheck_report.txt',[],"cppcheck --quiet --enable=all src/ 2> $TARGET")
+        baseenv.AlwaysBuild(cppcheck_command)
+
+######## Configure Section #######
+
+if not (baseenv.GetOption('clean') or baseenv.GetOption('help')):
+
+    configure.config(baseenv,ARGUMENTS)
+
+    conf = Configure(baseenv)
+    if not conf.CheckCXX():
+        print('!!! Your compiler and/or environment is not correctly configured.')
+        Exit(1)
+    # if not conf.CheckFunc('printf'):
+    #         print('!!! Your compiler and/or environment is not correctly configured.')
+    #         Exit(1)
+    if conf.CheckCXXHeader('sstream'):
+        conf.env.Append(CPPDEFINES = 'HAS_SSTREAM')
+    baseenv = conf.Finish()
+
+Export('baseenv')
+
+#print (baseenv.Dump())
+#print ('CXXFLAGS = ', baseenv['CXXFLAGS'])
+#print ('LINKFLAGS = ', baseenv['LINKFLAGS'])
+#print ('SHLINKFLAGS = ', baseenv['SHLINKFLAGS'])
 
 ####### Start of main SConstruct ############
 
 hallclib = 'HallC'
 hallalib = 'HallA'
 dclib = 'dc'
-scalerlib = 'scaler'
+eviolib = 'evio'
 
-baseenv.Append(LIBPATH=['$HC_DIR','$HA_DIR','$HC_SRC','$HA_SRC','$HA_DC','$HA_SCALER'])
+baseenv.Append(LIBPATH=['$HC_DIR','$EVIO_LIB','$HA_DIR','$HC_SRC','$HA_SRC','$HA_DC'])
 baseenv.Replace(SHLIBSUFFIX = '.so')
-baseenv.Append(CPPDEFINES = '-DHALLC_MODS')
+baseenv.Replace(SOSUFFIX = baseenv.subst('$SHLIBSUFFIX'))
+#baseenv.Replace(SHLIBSUFFIX = '.so')
+baseenv.Append(SHLIBSUFFIX = '.'+baseenv.subst('$VERSION'))
 
-directorylist = ['./','src','podd','podd/src','podd/hana_decode','podd/hana_scaler']
-
-baseenv.Append(SHLIBSUFFIX ='.'+baseenv.subst('$VERSION'))
 pbaseenv=baseenv.Clone()
-pbaseenv.Append(LIBS=[hallclib,hallalib,dclib,scalerlib])
-baseenv.Append(LIBS=[hallalib,dclib,scalerlib])
+pbaseenv.Prepend(LIBS=[hallclib,hallalib,dclib,eviolib])
+baseenv.Prepend(LIBS=[hallalib,dclib,eviolib])
 Export('pbaseenv')
 
+if pbaseenv['CXX'] == 'g++':
+    gxxVersion = [int(i) for i in pbaseenv['CXXVERSION'].split('.')]
+    if (gxxVersion[0] < 4) or (gxxVersion[0] == 4 and gxxVersion[1] < 4):
+        print('Error: g++ version too old! Need at least g++ 4.4!')
+        Exit(1)
+
+##directorylist = ['./','src','podd','podd/src','podd/hana_decode']
+##SConscript('podd/SConstruct')
+
+if baseenv.GetOption('clean'):
+    subprocess.call(['echo', '!!!!!! Cleaning Podd Directory !!!!!! '])
+    podd_command_scons = "cd %s; scons -c" % baseenv.subst('$HA_DIR')
+else:
+    subprocess.call(['echo', '!!!!!! Building Podd !!!!!! '])
+    podd_command_scons = "cd %s; scons" % baseenv.subst('$HA_DIR')
+    if baseenv.GetOption('num_jobs'):
+        podd_command_scons += " -j%s" % (GetOption('num_jobs')) 
+    if baseenv.GetOption('silent'):
+        podd_command_scons += " -s"
+    for key,value in ARGLIST:
+        podd_command_scons += " %s=%s" % (key,value)
+
+print ("podd_command_scons = %s" % podd_command_scons)
+
+os.system(podd_command_scons)
+
+directorylist = ['./','src']
 SConscript(dirs = directorylist,name='SConscript.py',exports='baseenv')
 
 #######  End of SConstruct #########

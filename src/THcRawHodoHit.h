@@ -1,38 +1,56 @@
 #ifndef ROOT_THcRawHodoHit
 #define ROOT_THcRawHodoHit
 
+#include "THcRawAdcHit.h"
 #include "THcRawHit.h"
+#include "THcRawTdcHit.h"
+
 
 class THcRawHodoHit : public THcRawHit {
-
- public:
   friend class THcScintillatorPlane;
+  friend class THcHodoscope;
+  friend class THcHodoHit;
 
-  THcRawHodoHit(Int_t plane=0, Int_t counter=0) : THcRawHit(plane, counter), 
-    fADC_pos(-1), fADC_neg(-1),
-    fTDC_pos(-1), fTDC_neg(-1) {
-  }
-  THcRawHodoHit& operator=( const THcRawHodoHit& );
-  virtual ~THcRawHodoHit() {}
+  public:
 
-  virtual void Clear( Option_t* opt="" )
-    { fADC_pos = -1; fADC_neg = -1; fTDC_pos = -1; fTDC_neg = -1; }
+    THcRawHodoHit(Int_t plane=0, Int_t counter=0);
+    THcRawHodoHit& operator=(const THcRawHodoHit& right);
+    virtual ~THcRawHodoHit();
 
-  void SetData(Int_t signal, Int_t data);
-  Int_t GetData(Int_t signal);
+    virtual void Clear(Option_t* opt="");
 
-  //  virtual Bool_t  IsSortable () const {return kTRUE; }
-  //  virtual Int_t   Compare(const TObject* obj) const;
+    virtual void SetData(Int_t signal, Int_t data);
+    virtual void SetSample(Int_t signal, Int_t data);
+    virtual void SetDataTimePedestalPeak(
+      Int_t signal, Int_t data, Int_t time, Int_t pedestal, Int_t peak
+    );
+    virtual void SetReference(Int_t signal, Int_t reference);
 
- protected:
-  Int_t fADC_pos;
-  Int_t fADC_neg;
-  Int_t fTDC_pos;
-  Int_t fTDC_neg;
+    virtual Int_t GetData(Int_t signal);
+    virtual Int_t GetRawData(Int_t signal);
+    virtual Int_t GetReference(Int_t signal);
+    virtual ESignalType GetSignalType(Int_t signal);
+    virtual Int_t GetNSignals();
 
- private:
+    virtual Bool_t HasReference(Int_t signal);
 
-  ClassDef(THcRawHodoHit, 0);	// Raw Hodoscope hit
-};  
+    THcRawAdcHit& GetRawAdcHitPos();
+    THcRawAdcHit& GetRawAdcHitNeg();
+    THcRawTdcHit& GetRawTdcHitPos();
+    THcRawTdcHit& GetRawTdcHitNeg();
 
-#endif
+    void SetF250Params(Int_t NSA, Int_t NSB, Int_t NPED);
+
+  protected:
+    static const Int_t fNAdcSignals = 2;
+    static const Int_t fNTdcSignals = 2;
+
+    THcRawAdcHit fAdcHits[fNAdcSignals];
+    THcRawTdcHit fTdcHits[fNTdcSignals];
+
+  private:
+    ClassDef(THcRawHodoHit, 0);  // Raw Hodoscope hit
+};
+
+
+#endif  // ROOT_THcRawHodoHit

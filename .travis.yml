@@ -1,0 +1,42 @@
+os: linux
+compiler: gcc
+language: cpp
+dist: trusty
+sudo: false
+env:
+  global:
+    - MAKEFLAGS="-j2"
+    - SCONSFLAGS="-j2"
+    - HCANALYZER="."
+    - ANALYZER="podd"
+    - LD_LIBRARY_PATH=$ANALYZER:$HCANALYZER:$LD_LIBRARY_PATH
+git:
+  depth: 5
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get autoremove
+  - sudo pip install --egg scons
+install:
+  - wget https://root.cern.ch/download/root_v6.12.06.Linux-ubuntu14-x86_64-gcc4.8.tar.gz -O /tmp/root.tar.gz
+  - pwd
+  - tar -xzf /tmp/root.tar.gz
+  - source ./root/bin/thisroot.sh
+  - source ./setup.sh
+  - python --version
+  - scons --version
+script:
+  - make
+  - scons
+after_success:
+  - pwd
+  - ldd $HCANALYZER/hcana
+  - $HCANALYZER/hcana --version
+  - $HCANALYZER/hcana -q
+branches:
+  only:
+    - develop
+notifications:
+  email:
+    recipients: saw@jlab.org
+    on_success: always
+    on_failure: always

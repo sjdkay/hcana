@@ -1,14 +1,10 @@
-///////////////////////////////////////////////////////////////////////////////
-//                                                                           //
-// THcShower                                                                 //
-//                                                                           //
-// Shower counter class, describing a generic segmented shower detector.     //
-//                                                                           //
-//                                                                           //
-//                                                                           //
-//                                                                           //
-///////////////////////////////////////////////////////////////////////////////
+/** \class THcShower
+    \ingroup Detectors
 
+\brief Generic segmented shower detector.
+
+*/
+ 
 #include "THcShower.h"
 #include "THcHallCSpectrometer.h"
 #include "THaEvData.h"
@@ -39,6 +35,8 @@ THcShower::THcShower( const char* name, const char* description,
 {
   // Constructor
   fNLayers = 0;			// No layers until we make them
+  fNTotLayers = 0;
+  fHasArray = 0;
 
   fClusterList = new THcShowerClusterList;
 }
@@ -58,30 +56,35 @@ void THcShower::Setup(const char* name, const char* description)
   prefix[0] = tolower(GetApparatus()->GetName()[0]);
   prefix[1] = '\0';
 
+
   string layernamelist;
+  fHasArray = 0;		// Flag for presence of fly's eye array
   DBRequest list[]={
     {"cal_num_layers", &fNLayers, kInt},
     {"cal_layer_names", &layernamelist, kString},
+    {"cal_array",&fHasArray, kInt,0, 1},
+    {"cal_adcrefcut", &fADC_RefTimeCut, kInt, 0, 1},
     {0}
   };
 
+  fADC_RefTimeCut = 0;
   gHcParms->LoadParmValues((DBRequest*)&list,prefix);
-
+  fNTotLayers = (fNLayers+(fHasArray!=0?1:0));
   vector<string> layer_names = vsplit(layernamelist);
 
-  if(layer_names.size() != (UInt_t) fNLayers) {
-    cout << "THcShower::Setup ERROR: Number of layers " << fNLayers 
+  if(layer_names.size() != fNTotLayers) {
+    cout << "THcShower::Setup ERROR: Number of layers " << fNTotLayers
 	 << " doesn't agree with number of layer names "
 	 << layer_names.size() << endl;
     // Should quit.  Is there an official way to quit?
   }
 
-  fLayerNames = new char* [fNLayers];
-  for(UInt_t i=0;i<fNLayers;i++) {
+  fLayerNames = new char* [fNTotLayers];
+  for(UInt_t i=0;i<fNTotLayers;i++) {
     fLayerNames[i] = new char[layer_names[i].length()+1];
     strcpy(fLayerNames[i], layer_names[i].c_str());
   }
-  
+
   char *desc = new char[strlen(description)+100];
   fPlanes = new THcShowerPlane* [fNLayers];
 
@@ -90,20 +93,36 @@ void THcShower::Setup(const char* name, const char* description)
     strcat(desc, " Plane ");
     strcat(desc, fLayerNames[i]);
 
-    fPlanes[i] = new THcShowerPlane(fLayerNames[i], desc, i+1, this); 
+    fPlanes[i] = new THcShowerPlane(fLayerNames[i], desc, i+1, this);
 
   }
+  if(fHasArray) {
+    strcpy(desc, description);
+    strcat(desc, " Array ");
+    strcat(desc, fLayerNames[fNTotLayers-1]);
+
+    fArray = new THcShowerArray(fLayerNames[fNTotLayers-1], desc, fNTotLayers,
+				this);
+  } else {
+    fArray = 0;
+  }
+
   delete [] desc;
 
-  cout << "---------------------------------------------------------------\n";
+  // cout << "---------------------------------------------------------------\n";
+
   cout << "From THcShower::Setup: created Shower planes for "
        << GetApparatus()->GetName() << ": ";
 
-  for(UInt_t i=0;i < fNLayers;i++) {
+  for(UInt_t i=0;i < fNTotLayers;i++) {
     cout << fLayerNames[i];
-    i < fNLayers-1 ? cout << ", " : cout << ".\n";
+    i < fNTotLayers-1 ? cout << ", " : cout << ".\n";
   }
-  cout << "---------------------------------------------------------------\n";
+
+  // if(fHasArray)
+  //   cout << fLayerNames[fNTotLayers-1] << " has fly\'s eye configuration\n";
+
+  // cout << "---------------------------------------------------------------\n";
 
 }
 
@@ -113,10 +132,19 @@ THaAnalysisObject::EStatus THcShower::Init( const TDatime& date )
 {
   Setup(GetName(), GetTitle());
 
+  char EngineDID[] = "xCAL";
+  EngineDID[0] = toupper(GetApparatus()->GetName()[0]);
+  if( gHcDetectorMap->FillMap(fDetMap, EngineDID) < 0 ) {
+    static const char* const here = "Init()";
+    Error( Here(here), "Error filling detectormap for %s.", EngineDID );
+    return kInitError;
+  }
+
   // Should probably put this in ReadDatabase as we will know the
   // maximum number of hits after setting up the detector map
 
-  InitHitList(fDetMap, "THcRawShowerHit", 100);
+  InitHitList(fDetMap, "THcRawShowerHit", fDetMap->GetTotNumChan()+1,
+	      0, fADC_RefTimeCut);
 
   EStatus status;
   if( (status = THaNonTrackingDetector::Init( date )) )
@@ -127,23 +155,36 @@ THaAnalysisObject::EStatus THcShower::Init( const TDatime& date )
       return fStatus=status;
     }
   }
-
-  char EngineDID[] = " CAL";
-  EngineDID[0] = toupper(GetApparatus()->GetName()[0]);
-
-  if( gHcDetectorMap->FillMap(fDetMap, EngineDID) < 0 ) {
-    static const char* const here = "Init()";
-    Error( Here(here), "Error filling detectormap for %s.", 
-	     EngineDID);
-      return kInitError;
+  if(fHasArray) {
+    if((status = fArray->Init( date ))) {
+      return fStatus = status;
+    }
   }
 
+  if(fHasArray) {
+    // cout << "THcShower::Init: adjustment of fiducial volume limits to the fly's eye part." << endl;
+    // cout << "  Old limits:" << endl;
+    // cout << "    Xmin = " << fvXmin << "  Xmax = " << fvXmax << endl;
+    // cout << "    Ymin = " << fvYmin << "  Ymax = " << fvYmax << endl;
+    fvXmin = TMath::Max(fvXmin, fArray->fvXmin());
+    fvXmax = TMath::Min(fvXmax, fArray->fvXmax());
+    fvYmin = TMath::Max(fvYmin, fArray->fvYmin());
+    fvYmax = TMath::Min(fvYmax, fArray->fvYmax());
+    // cout << "  New limits:" << endl;
+    // cout << "    Xmin = " << fvXmin << "  Xmax = " << fvXmax << endl;
+    // cout << "    Ymin = " << fvYmin << "  Ymax = " << fvYmax << endl;
+  }
 
-  cout << "---------------------------------------------------------------\n";
-  cout << "From THcShower::Init: initialized " << GetApparatus()->GetName()
-       <<  GetName() << endl;
-  cout << "---------------------------------------------------------------\n";
+  // cout << "---------------------------------------------------------------\n";
+  // cout << "From THcShower::Init: initialized " << GetApparatus()->GetName()
+  //      <<  GetName() << endl;
+  // cout << "---------------------------------------------------------------\n";
 
+  fPresentP = 0;
+  THaVar* vpresent = gHaVars->Find(Form("%s.present",GetApparatus()->GetName()));
+  if(vpresent) {
+    fPresentP = (Bool_t *) vpresent->GetValuePointer();
+  }
   return fStatus = kOK;
 }
 
@@ -158,7 +199,7 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
   //  static const char* const here = "ReadDatabase()";
   char prefix[2];
 
-  // Read data from database 
+  // Read data from database
   // Pull values from the THcParmList instead of reading a database
   // file like Hall A does.
 
@@ -171,12 +212,18 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
   prefix[0]=tolower(GetApparatus()->GetName()[0]);
   prefix[1]='\0';
 
+  CreateMissReportParms(Form("%scal",prefix));
+
+  fNegCols = fNLayers;		// If not defined assume tube on each end
+                                // for every layer
   {
     DBRequest list[]={
-      {"cal_num_neg_columns", &fNegCols, kInt},
-      {"cal_slop", &fSlop, kDouble},
+      {"cal_num_neg_columns", &fNegCols, kInt, 0, 1},
+      {"cal_slop", &fSlop, kDouble,0,1},
       {"cal_fv_test", &fvTest, kInt,0,1},
-      {"cal_fv_delta", &fvDelta, kDouble},
+      {"cal_fv_delta", &fvDelta, kDouble,0,1},
+      {"cal_ADCMode", &fADCMode, kInt, 0, 1},
+      {"cal_adc_tdc_offset", &fAdcTdcOffset, kDouble, 0, 1},
       {"dbg_raw_cal", &fdbg_raw_cal, kInt, 0, 1},
       {"dbg_decoded_cal", &fdbg_decoded_cal, kInt, 0, 1},
       {"dbg_sparsified_cal", &fdbg_sparsified_cal, kInt, 0, 1},
@@ -192,7 +239,8 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
     fdbg_clusters_cal = 0;
     fdbg_tracks_cal = 0;
     fdbg_init_cal = 0;
-
+    fAdcTdcOffset=0.0;
+    fADCMode=kADCDynamicPedestal;
     gHcParms->LoadParmValues((DBRequest*)&list, prefix);
   }
 
@@ -236,16 +284,16 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
 
   BlockThick = new Double_t [fNLayers];
   fNBlocks = new UInt_t [fNLayers];
-  fNLayerZPos = new Double_t [fNLayers];
-  YPos = new Double_t [2*fNLayers];
+  fLayerZPos = new Double_t [fNLayers];
+  fYPos = new Double_t [2*fNLayers];
 
   for(UInt_t i=0;i<fNLayers;i++) {
     DBRequest list[]={
       {Form("cal_%s_thick",fLayerNames[i]), &BlockThick[i], kDouble},
       {Form("cal_%s_nr",fLayerNames[i]), &fNBlocks[i], kInt},
-      {Form("cal_%s_zpos",fLayerNames[i]), &fNLayerZPos[i], kDouble},
-      {Form("cal_%s_right",fLayerNames[i]), &YPos[2*i], kDouble},
-      {Form("cal_%s_left",fLayerNames[i]), &YPos[2*i+1], kDouble},
+      {Form("cal_%s_zpos",fLayerNames[i]), &fLayerZPos[i], kDouble},
+      {Form("cal_%s_right",fLayerNames[i]), &fYPos[2*i], kDouble},
+      {Form("cal_%s_left",fLayerNames[i]), &fYPos[2*i+1], kDouble},
       {0}
     };
     gHcParms->LoadParmValues((DBRequest*)&list, prefix);
@@ -253,11 +301,11 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
 
   //Caution! Z positions (fronts) are off in hcal.param! Correct later on.
 
-  XPos = new Double_t* [fNLayers];
+  fXPos = new Double_t* [fNLayers];
   for(UInt_t i=0;i<fNLayers;i++) {
-    XPos[i] = new Double_t [fNBlocks[i]];
+    fXPos[i] = new Double_t [fNBlocks[i]];
     DBRequest list[]={
-      {Form("cal_%s_top",fLayerNames[i]),XPos[i], kDouble, fNBlocks[i]},
+      {Form("cal_%s_top",fLayerNames[i]),fXPos[i], kDouble, fNBlocks[i]},
       {0}
     };
     gHcParms->LoadParmValues((DBRequest*)&list, prefix);
@@ -269,12 +317,12 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
       cout << "  Plane " << fLayerNames[i] << ":" << endl;
       cout << "    Block thickness: " << BlockThick[i] << endl;
       cout << "    NBlocks        : " << fNBlocks[i] << endl;
-      cout << "    Z Position     : " << fNLayerZPos[i] << endl;
-      cout << "    Y Positions    : " << YPos[2*i] << ", " << YPos[2*i+1]
+      cout << "    Z Position     : " << fLayerZPos[i] << endl;
+      cout << "    Y Positions    : " << fYPos[2*i] << ", " << fYPos[2*i+1]
 	   <<endl;
       cout << "    X Positions    :";
       for(UInt_t j=0; j<fNBlocks[i]; j++) {
-	cout << " " << XPos[i][j];
+	cout << " " << fXPos[i][j];
       }
       cout << endl;
     }
@@ -283,10 +331,10 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
   // Fiducial volume limits, based on Plane 1 positions.
   //
 
-  fvXmin = XPos[0][0] + fvDelta;
-  fvXmax = XPos[0][fNBlocks[0]-1] + BlockThick[0] - fvDelta;
-  fvYmin = YPos[0] + fvDelta;
-  fvYmax = YPos[1] - fvDelta;
+  fvXmin = fXPos[0][0] + fvDelta;
+  fvXmax = fXPos[0][fNBlocks[0]-1] + BlockThick[0] - fvDelta;
+  fvYmin = fYPos[0] + fvDelta;
+  fvYmax = fYPos[1] - fvDelta;
 
   // Debug output.
   if (fdbg_init_cal) {
@@ -295,51 +343,63 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
     cout << "    Ymin = " << fvYmin << "  Ymax = " << fvYmax << endl;
   }
 
-  //Calibration related parameters (from hcal.param).
+  //Calibration related parameters (from h(s)cal.param).
 
-  fNtotBlocks=0;              //total number of blocks
-  for (UInt_t i=0; i<fNLayers; i++) fNtotBlocks += fNBlocks[i];
+  fNTotBlocks=0;              //total number of blocks in the layers
+  for (UInt_t i=0; i<fNLayers; i++) fNTotBlocks += fNBlocks[i];
 
   // Debug output.
-  if (fdbg_init_cal) 
-    cout << "  Total number of blocks in the calorimeter: " << fNtotBlocks
-	 << endl;
+  if (fdbg_init_cal)
+    cout << "  Total number of blocks in the layers of calorimeter: " << dec
+	 << fNTotBlocks << endl;
 
   //Pedestal limits from hcal.param.
-  fShPosPedLimit = new Int_t [fNtotBlocks];
-  fShNegPedLimit = new Int_t [fNtotBlocks];
+  fShPosPedLimit = new Int_t [fNTotBlocks];
+  fShNegPedLimit = new Int_t [fNTotBlocks];
+  for (UInt_t i=0; i<fNTotBlocks; i++) {
+    fShPosPedLimit[i]=0.;
+    fShNegPedLimit[i]=0.;
+  }
 
   //Calibration constants
-  fPosGain = new Double_t [fNtotBlocks];
-  fNegGain = new Double_t [fNtotBlocks];
+  fPosGain = new Double_t [fNTotBlocks];
+  fNegGain = new Double_t [fNTotBlocks];
 
   //Read in parameters from hcal.param
-  Double_t hcal_pos_cal_const[fNtotBlocks];
-  //  Double_t hcal_pos_gain_ini[fNtotBlocks];     not used
-  //  Double_t hcal_pos_gain_cur[fNtotBlocks];     not used
-  //  Int_t    hcal_pos_ped_limit[fNtotBlocks];    not used
-  Double_t hcal_pos_gain_cor[fNtotBlocks];
+  Double_t hcal_pos_cal_const[fNTotBlocks];
+  Double_t hcal_pos_gain_cor[fNTotBlocks];
 
-  Double_t hcal_neg_cal_const[fNtotBlocks];
-  //  Double_t hcal_neg_gain_ini[fNtotBlocks];     not used
-  //  Double_t hcal_neg_gain_cur[fNtotBlocks];     not used
-  //  Int_t    hcal_neg_ped_limit[fNtotBlocks];    not used
-  Double_t hcal_neg_gain_cor[fNtotBlocks];
+  Double_t hcal_neg_cal_const[fNTotBlocks];
+  Double_t hcal_neg_gain_cor[fNTotBlocks];
+
+  fPosAdcTimeWindowMin = new Double_t [fNTotBlocks];
+  fNegAdcTimeWindowMin = new Double_t [fNTotBlocks];
+  fPosAdcTimeWindowMax = new Double_t [fNTotBlocks];
+  fNegAdcTimeWindowMax = new Double_t [fNTotBlocks];
 
   DBRequest list[]={
-    {"cal_pos_cal_const", hcal_pos_cal_const, kDouble, fNtotBlocks},
-    //    {"cal_pos_gain_ini",  hcal_pos_gain_ini,  kDouble, fNtotBlocks},
-    //    {"cal_pos_gain_cur",  hcal_pos_gain_cur,  kDouble, fNtotBlocks},
-    {"cal_pos_ped_limit", fShPosPedLimit, kInt,    fNtotBlocks},
-    {"cal_pos_gain_cor",  hcal_pos_gain_cor,  kDouble, fNtotBlocks},
-    {"cal_neg_cal_const", hcal_neg_cal_const, kDouble, fNtotBlocks},
-    //    {"cal_neg_gain_ini",  hcal_neg_gain_ini,  kDouble, fNtotBlocks},
-    //    {"cal_neg_gain_cur",  hcal_neg_gain_cur,  kDouble, fNtotBlocks},
-    {"cal_neg_ped_limit", fShNegPedLimit, kInt,    fNtotBlocks},
-    {"cal_neg_gain_cor",  hcal_neg_gain_cor,  kDouble, fNtotBlocks},
-    {"cal_min_peds", &fShMinPeds, kInt},
+    {"cal_pos_cal_const", hcal_pos_cal_const, kDouble, fNTotBlocks},
+    {"cal_pos_ped_limit", fShPosPedLimit, kInt,    fNTotBlocks,1},
+    {"cal_pos_gain_cor",  hcal_pos_gain_cor,  kDouble, fNTotBlocks},
+    {"cal_neg_cal_const", hcal_neg_cal_const, kDouble, fNTotBlocks},
+    {"cal_neg_ped_limit", fShNegPedLimit, kInt,    fNTotBlocks,1},
+    {"cal_neg_gain_cor",  hcal_neg_gain_cor,  kDouble, fNTotBlocks},
+    {"cal_pos_AdcTimeWindowMin", fPosAdcTimeWindowMin, kDouble, static_cast<UInt_t>(fNTotBlocks),1},
+    {"cal_neg_AdcTimeWindowMin", fNegAdcTimeWindowMin, kDouble, static_cast<UInt_t>(fNTotBlocks),1},
+    {"cal_pos_AdcTimeWindowMax", fPosAdcTimeWindowMax, kDouble, static_cast<UInt_t>(fNTotBlocks),1},
+    {"cal_neg_AdcTimeWindowMax", fNegAdcTimeWindowMax, kDouble, static_cast<UInt_t>(fNTotBlocks),1},
+    {"cal_min_peds", &fShMinPeds, kInt,0,1},
     {0}
   };
+  fShMinPeds=0.;
+
+  for(UInt_t ip=0;ip<fNTotBlocks;ip++) {
+    fPosAdcTimeWindowMin[ip] = -1000.;
+    fNegAdcTimeWindowMin[ip] = -1000.;
+    fPosAdcTimeWindowMax[ip] = 1000.;
+    fNegAdcTimeWindowMax[ip] = 1000.;
+   }
+
   gHcParms->LoadParmValues((DBRequest*)&list, prefix);
 
   // Debug output.
@@ -403,7 +463,7 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
 
   // Calibration constants (GeV / ADC channel).
 
-  for (UInt_t i=0; i<fNtotBlocks; i++) {
+  for (UInt_t i=0; i<fNTotBlocks; i++) {
     fPosGain[i] = hcal_pos_cal_const[i] *  hcal_pos_gain_cor[i];
     fNegGain[i] = hcal_neg_cal_const[i] *  hcal_neg_gain_cor[i];
   }
@@ -434,9 +494,9 @@ Int_t THcShower::ReadDatabase( const TDatime& date )
   // Origin of the calorimeter, at the centre of the face of the detector,
   // or at the centre of the front of the 1-st layer.
   //
-  Double_t xOrig = (XPos[0][0] + XPos[0][fNBlocks[0]-1])/2 + BlockThick[0]/2;
-  Double_t yOrig = (YPos[0] + YPos[1])/2;
-  Double_t zOrig = fNLayerZPos[0];
+  Double_t xOrig = (fXPos[0][0] + fXPos[0][fNBlocks[0]-1])/2 + BlockThick[0]/2;
+  Double_t yOrig = (fYPos[0] + fYPos[1])/2;
+  Double_t zOrig = fLayerZPos[0];
 
   fOrigin.SetXYZ(xOrig, yOrig, zOrig);
 
@@ -471,12 +531,38 @@ Int_t THcShower::DefineVariables( EMode mode )
 
   RVarDef vars[] = {
     { "nhits", "Number of hits",                                 "fNhits" },
-    { "nclust", "Number of clusters",                            "fNclust" },
-    { "etot", "Total energy",                            "fEtot" },
-    { "etotnorm", "Total energy divided by Central Momentum",   "fEtotNorm" },
+    { "nclust", "Number of layer clusters",                            "fNclust" },
+    { "nclusttrack", "Number of layer cluster which matched best track","fNclustTrack" },
+    { "xclusttrack", "X pos of layer cluster which matched best track","fXclustTrack" },
+    { "xtrack", "X pos of track which matched layer cluster", "fXTrack" },
+    { "yclusttrack", "Y pos of layer cluster which matched best track","fYclustTrack" },
+    { "ytrack", "Y pos of track which matched layer cluster", "fYTrack" },
+    { "etot", "Total energy",                                    "fEtot" },
+    { "etotnorm", "Total energy divided by Central Momentum",    "fEtotNorm" },
+    { "etrack", "Track energy",                                  "fEtrack" },
+    { "etracknorm", "Total energy divided by track momentum",    "fEtrackNorm" },
+    { "eprtrack", "Track Preshower energy",                      "fEPRtrack" },
+    { "eprtracknorm", "Preshower energy divided by track momentum", "fEPRtrackNorm" },
+    { "etottracknorm", "Total energy divided by track momentum", "fETotTrackNorm" },
     { "ntracks", "Number of shower tracks",                      "fNtracks" },
     { 0 }
   };
+
+  if(fHasArray) {
+
+  RVarDef array_vars[] = {
+    { "sizeclustarray", "Number of block in array cluster that matches track", "fSizeClustArray" },
+    { "nclustarraytrack", "Number of cluster for Fly's eye which matched best track","fNclustArrayTrack" },
+    { "nblock_high_ene", "Block number in array with highest energy which matched best track","fNblockHighEnergy" },
+    { "xclustarraytrack", "X pos of cluster which matched best track","fXclustArrayTrack" },
+    { "xtrackarray", "X pos of track which matched cluster", "fXTrackArray" },
+    { "yclustarraytrack", "Y pos of cluster which matched best track","fYclustArrayTrack" },
+    { "ytrackarray", "Y pos of track which matched cluster", "fYTrackArray" },
+    { 0 }
+  };
+
+  DefineVarsFromList( array_vars, mode );
+  }
   return DefineVarsFromList( vars, mode );
 
 }
@@ -503,13 +589,13 @@ void THcShower::DeleteArrays()
 
   delete [] BlockThick;  BlockThick = NULL;
   delete [] fNBlocks;  fNBlocks = NULL;
-  delete [] fNLayerZPos;  fNLayerZPos = NULL;
-  delete [] XPos;  XPos = NULL;
-  delete [] ZPos;  ZPos = NULL;
+  delete [] fLayerZPos;  fLayerZPos = NULL;
+  delete [] fXPos;  fXPos = NULL;
+  delete [] fZPos;  fZPos = NULL;
 }
 
 //_____________________________________________________________________________
-inline 
+inline
 void THcShower::Clear(Option_t* opt)
 {
 
@@ -518,12 +604,32 @@ void THcShower::Clear(Option_t* opt)
   for(UInt_t ip=0;ip<fNLayers;ip++) {
     fPlanes[ip]->Clear(opt);
   }
+  if(fHasArray) {
+    fArray->Clear(opt);
+  }
 
   fNhits = 0;
   fNclust = 0;
+  fNclustTrack = -2;
+  fXclustTrack = -1000;
+  fXTrack = -1000;
+  fYclustTrack = -1000;
+  fYTrack = -1000;
+  fNclustArrayTrack = -2;
+  fXclustArrayTrack = -1000;
+  fXTrackArray = -1000;
+  fYclustArrayTrack = -1000;
+  fYTrackArray = -1000;
   fNtracks = 0;
   fEtot = 0.;
   fEtotNorm = 0.;
+  fEtrack = 0.;
+  fEtrackNorm = 0.;
+  fEPRtrack = 0.;
+  fEPRtrackNorm = 0.;
+  fETotTrackNorm = 0.;
+  fSizeClustArray = 0;
+  fNblockHighEnergy = 0.;
 
   // Purge cluster list
 
@@ -543,14 +649,21 @@ Int_t THcShower::Decode( const THaEvData& evdata )
   Clear();
 
   // Get the Hall C style hitlist (fRawHitList) for this event
-  Int_t nhits = DecodeToHitList(evdata);
-
+  Bool_t present = kTRUE;	// Suppress reference time warnings
+  if(fPresentP) {		// if this spectrometer not part of trigger
+    present = *fPresentP;
+  }
+  Int_t nhits = DecodeToHitList(evdata, !present);
+  
   fEvent = evdata.GetEvNum();
 
   if(gHaCuts->Result("Pedestal_event")) {
     Int_t nexthit = 0;
     for(UInt_t ip=0;ip<fNLayers;ip++) {
       nexthit = fPlanes[ip]->AccumulatePedestals(fRawHitList, nexthit);
+    }
+    if(fHasArray) {
+      nexthit = fArray->AccumulatePedestals(fRawHitList, nexthit);
     }
     fAnalyzePedestals = 1;	// Analyze pedestals first normal events
     return(0);
@@ -560,17 +673,20 @@ Int_t THcShower::Decode( const THaEvData& evdata )
     for(UInt_t ip=0;ip<fNLayers;ip++) {
       fPlanes[ip]->CalculatePedestals();
     }
+    if(fHasArray) {
+      fArray->CalculatePedestals();
+    }
     fAnalyzePedestals = 0;	// Don't analyze pedestals next event
   }
 
   Int_t nexthit = 0;
   for(UInt_t ip=0;ip<fNLayers;ip++) {
     nexthit = fPlanes[ip]->ProcessHits(fRawHitList, nexthit);
-    fEtot += fPlanes[ip]->GetEplane();
   }
-  THcHallCSpectrometer *app = static_cast<THcHallCSpectrometer*>(GetApparatus());
-  fEtotNorm=fEtot/(app->GetPcentral());
- 
+  if(fHasArray) {
+    nexthit = fArray->ProcessHits(fRawHitList, nexthit);
+  }
+
   return nhits;
 }
 
@@ -578,44 +694,50 @@ Int_t THcShower::Decode( const THaEvData& evdata )
 Int_t THcShower::CoarseProcess( TClonesArray& tracks)
 {
   // Calculation of coordinates of particle track cross point with shower
-  // plane in the detector coordinate system. For this, parameters of track 
+  // plane in the detector coordinate system. For this, parameters of track
   // reconstructed in THaVDC::CoarseTrack() are used.
   //
   // Apply corrections and reconstruct the complete hits.
-  
+
   // Clustering of hits.
   //
 
   // Fill set of unclustered hits.
-
+  for(UInt_t ip=0;ip<fNLayers;ip++) {
+    fPlanes[ip]->CoarseProcessHits();
+    fEtot += fPlanes[ip]->GetEplane();
+  }
+  if(fHasArray) {
+    fArray->CoarseProcessHits();
+    fEtot += fArray->GetEarray();
+  }
+  THcHallCSpectrometer *app = static_cast<THcHallCSpectrometer*>(GetApparatus());
+  fEtotNorm=fEtot/(app->GetPcentral());
+  //
   THcShowerHitSet HitSet;
 
   for(UInt_t j=0; j < fNLayers; j++) {
 
     for (UInt_t i=0; i<fNBlocks[j]; i++) {
 
-      //May be should be done this way.
       //
-      //      Double_t Edep = fPlanes[j]->GetEmean(i);
-      //      if (Edep > 0.) {                                 //hit
-      //	Double_t x = YPos[j][i] + BlockThick[j]/2.;    //top + thick/2
-      //	Double_t z = fNLayerZPos[j] + BlockThick[j]/2.;//front + thick/2
-      //      	THcShowerHit* hit = new THcShowerHit(i,j,x,z,Edep);
-
-      //ENGINE way.
-      //
-      if (fPlanes[j]->GetApos(i) - fPlanes[j]->GetPosPed(i) >
-	  fPlanes[j]->GetPosThr(i) - fPlanes[j]->GetPosPed(i) ||
-	  fPlanes[j]->GetAneg(i) - fPlanes[j]->GetNegPed(i) >
-	  fPlanes[j]->GetNegThr(i) - fPlanes[j]->GetNegPed(i)) {    //hit
+      if (fPlanes[j]->GetAposP(i) > 0  || fPlanes[j]->GetAnegP(i) >0) {    //hit
 
 	Double_t Edep = fPlanes[j]->GetEmean(i);
 	Double_t Epos = fPlanes[j]->GetEpos(i);
 	Double_t Eneg = fPlanes[j]->GetEneg(i);
-	Double_t x = XPos[j][i] + BlockThick[j]/2.;        //top + thick/2
-	Double_t z = fNLayerZPos[j] + BlockThick[j]/2.;    //front + thick/2
+	Double_t x = fXPos[j][i] + BlockThick[j]/2.;        //top + thick/2
+        Double_t y=-1000;
+        if (fHasArray) {
+	  if (Eneg>0) y = fYPos[2*j]/2 ;  
+	  if (Epos>0) y = fYPos[2*j+1]/2 ;  
+	  if (Epos>0 && Eneg>0) y = 0. ;  
+        } else {
+          y=0.;
+	}
+	Double_t z = fLayerZPos[j] + BlockThick[j]/2.;      //front + thick/2
 
-	THcShowerHit* hit = new THcShowerHit(i,j,x,z,Edep,Epos,Eneg);
+	THcShowerHit* hit = new THcShowerHit(i,j,x,y,z,Edep,Epos,Eneg);
 
 	HitSet.insert(hit);   //<set> version
       }
@@ -632,6 +754,7 @@ Int_t THcShower::CoarseProcess( TClonesArray& tracks)
     cout << "Debug output from THcShower::CoarseProcess for "
 	 << GetApparatus()->GetName() << endl;
 
+    cout << " event = " << fEvent << endl;
     cout << "  List of unclustered hits. Total hits:     " << fNhits << endl;
     THcShowerHitIt it = HitSet.begin();    //<set> version
     for (Int_t i=0; i!=fNhits; i++) {
@@ -642,7 +765,7 @@ Int_t THcShower::CoarseProcess( TClonesArray& tracks)
 
   // Fill list of clusters.
 
-  ClusterHits(HitSet);
+  ClusterHits(HitSet, fClusterList);
 
   fNclust = (*fClusterList).size();   //number of clusters
 
@@ -650,14 +773,14 @@ Int_t THcShower::CoarseProcess( TClonesArray& tracks)
 
   if (fdbg_clusters_cal) {
 
-    cout << "  Clustered hits. Number of clusters: " << fNclust << endl;
+    cout << " event = " << fEvent << "  Clustered hits. Number of clusters: " << fNclust << endl;
 
     UInt_t i = 0;
     for (THcShowerClusterListIt ppcl = (*fClusterList).begin();
-	 ppcl != (*fClusterList).end(); ppcl++) {
+	 ppcl != (*fClusterList).end(); ++ppcl) {
 
       cout << "  Cluster #" << i++
-	   <<":  E=" << clE(*ppcl) 
+	   <<":  E=" << clE(*ppcl)
 	   << "  Epr=" << clEpr(*ppcl)
 	   << "  X=" << clX(*ppcl)
 	   << "  Z=" << clZ(*ppcl)
@@ -666,7 +789,7 @@ Int_t THcShower::CoarseProcess( TClonesArray& tracks)
 
       Int_t j=0;
       for (THcShowerClusterIt pph=(**ppcl).begin(); pph!=(**ppcl).end();
-	   pph++) {
+	   ++pph) {
 	cout << "  hit " << j++ << ": ";
 	(**pph).show();
       }
@@ -676,15 +799,33 @@ Int_t THcShower::CoarseProcess( TClonesArray& tracks)
     cout << "---------------------------------------------------------------\n";
   }
 
+  // Do same for Array.
+
+  if(fHasArray) fArray->CoarseProcess(tracks);
+
+  //  
+  Int_t Ntracks = tracks.GetLast()+1;   // Number of reconstructed tracks
+  Double_t save_energy=0;
+ for (Int_t itrk=0; itrk<Ntracks; itrk++) {
+
+    THaTrack* theTrack = static_cast<THaTrack*>( tracks[itrk] );
+    //     save_energy = GetShEnergy(theTrack);
+    save_energy = GetShEnergy(theTrack, fNLayers);
+      if (fHasArray) save_energy += fArray->GetShEnergy(theTrack);
+    theTrack->SetEnergy(save_energy);
+  }       //over tracks
+
+  //
   return 0;
 }
 
 //-----------------------------------------------------------------------------
 
-void THcShower::ClusterHits(THcShowerHitSet& HitSet) {
+void THcShower::ClusterHits(THcShowerHitSet& HitSet,
+			    THcShowerClusterList* ClusterList) {
 
   // Collect hits from the HitSet into the clusters. The resultant clusters
-  // of hits are saved in the fClusterList.
+  // of hits are saved in the ClusterList.
 
   while (HitSet.size() != 0) {
 
@@ -703,10 +844,9 @@ void THcShower::ClusterHits(THcShowerHitSet& HitSet) {
       for (THcShowerHitIt i=HitSet.begin(); i!=HitSet.end(); ++i) {
 
 	for (THcShowerClusterIt k=(*cluster).begin(); k!=(*cluster).end();
-	     k++) {
+	     ++k) {
 
 	  if ((**i).isNeighbour(*k)) {
-
 	    (*cluster).insert(*i);      //If the hit #i is neighbouring a hit
 	    HitSet.erase(i);            //in the cluster, then move it
 	                                //into the cluster.
@@ -721,7 +861,7 @@ void THcShower::ClusterHits(THcShowerHitSet& HitSet) {
 
     }                                   //while clustered
 
-    fClusterList->push_back(cluster);   //Put the cluster in the cluster list
+    ClusterList->push_back(cluster);   //Put the cluster in the cluster list
 
   }                                     //While hit_list not exhausted
 
@@ -737,6 +877,10 @@ Double_t addE(Double_t x, THcShowerHit* h) {
 
 Double_t addX(Double_t x, THcShowerHit* h) {
   return x + h->hitE() * h->hitX();
+}
+
+Double_t addY(Double_t x, THcShowerHit* h) {
+  return x + h->hitE() * h->hitY();
 }
 
 Double_t addZ(Double_t x, THcShowerHit* h) {
@@ -755,14 +899,23 @@ Double_t addEneg(Double_t x, THcShowerHit* h) {
   return x + h->hitEneg();
 }
 
+// Y coordinate of center of gravity of cluster, calculated as hit energy
+// weighted average. Put X out of the calorimeter (-100 cm), if there is no
+// energy deposition in the cluster.
+//
+Double_t clY(THcShowerCluster* cluster) {
+  Double_t Etot = accumulate((*cluster).begin(),(*cluster).end(),0.,addE);
+  return (Etot != 0. ?
+	  accumulate((*cluster).begin(),(*cluster).end(),0.,addY)/Etot : -100.);
+}
 // X coordinate of center of gravity of cluster, calculated as hit energy
-// weighted average. Put X out of the calorimeter (-75 cm), if there is no
+// weighted average. Put X out of the calorimeter (-100 cm), if there is no
 // energy deposition in the cluster.
 //
 Double_t clX(THcShowerCluster* cluster) {
   Double_t Etot = accumulate((*cluster).begin(),(*cluster).end(),0.,addE);
   return (Etot != 0. ?
-	  accumulate((*cluster).begin(),(*cluster).end(),0.,addX)/Etot : -75.);
+	  accumulate((*cluster).begin(),(*cluster).end(),0.,addX)/Etot : -100.);
 }
 
 // Z coordinate of center of gravity of cluster, calculated as a hit energy
@@ -890,7 +1043,7 @@ Int_t THcShower::MatchCluster(THaTrack* Track,
       Double_t dx = TMath::Abs( clX(cluster) - XTrFront );
 
       if (dx <= (0.5*BlockThick[0] + fSlop)) {
-	fNtracks++;  // number of shower tracks (Consistent with engine)
+	fNtracks++;  // lumber of shower tracks (Consistent with engine)
 	if (dx < deltaX) {
 	  mclust = i;
 	  deltaX = dx;
@@ -905,6 +1058,7 @@ Int_t THcShower::MatchCluster(THaTrack* Track,
     cout << "---------------------------------------------------------------\n";
     cout << "Debug output from THcShower::MatchCluster for "
 	 << GetApparatus()->GetName() << endl;
+    cout << " event = " << fEvent << endl;
 
     cout << "  Track at DC:"
 	 << "  X = " << Track->GetX()
@@ -917,10 +1071,10 @@ Int_t THcShower::MatchCluster(THaTrack* Track,
 	 << "  Y = " << YTrFront
 	 << "  Pathl = " << pathl
 	 << endl;
-    if (fvTest) 
+    if (fvTest)
       cout << "  Fiducial volume test: inFidVol = " << inFidVol << endl;
 
-    cout << "  Matched cluster #" << mclust << ",  delatX= " << deltaX 
+    cout << "  Matched cluster #" << mclust << ",  delatX= " << deltaX
     	 << endl;
     cout << "---------------------------------------------------------------\n";
   }
@@ -929,15 +1083,15 @@ Int_t THcShower::MatchCluster(THaTrack* Track,
 }
 
 //_____________________________________________________________________________
-Float_t THcShower::GetShEnergy(THaTrack* Track) {
+Float_t THcShower::GetShEnergy(THaTrack* Track, UInt_t NLayers, UInt_t L0) {
 
-  // Get total energy deposited in the cluster matched to the given
-  // spectrometer Track.
+  // Get part of energy deposited in the cluster matched to the given
+  // spectrometer Track, limited by range of layers from L0 to L0+NLayers-1.
 
   // Track coordinates at front of the calorimeter, initialize out of
   // acceptance.
-  Double_t Xtr = -75.;
-  Double_t Ytr = -40.;
+  Double_t Xtr = -100.;
+  Double_t Ytr = -100.;
 
   // Associate a cluster to the track.
 
@@ -952,24 +1106,36 @@ Float_t THcShower::GetShEnergy(THaTrack* Track) {
 
     THcShowerCluster* cluster = *(fClusterList->begin()+mclust);
 
+    char prefix = GetApparatus()->GetName()[0];
+
     // Correct track energy depositions for the impact coordinate.
 
-    for (UInt_t ip=0; ip<fNLayers; ip++) {
+    //    for (UInt_t ip=0; ip<fNLayers; ip++) {
+    for (UInt_t ip=L0; ip<L0+NLayers; ip++) {
 
       // Coordinate correction factors for positive and negative sides,
-      // different for double PMT counters in the 1-st two layes and for
-      // single PMT counters in the rear two layers.
-      Float_t corpos = 1.;   
+      // different for double PMT counters in the 1-st two HMS layes,
+      // single PMT counters in the rear two HMS layers, and in the SHMS
+      // Preshower.
+      Float_t corpos = 1.;
       Float_t corneg = 1.;
+
       if (ip < fNegCols) {
-	corpos = Ycor(Ytr,0);
-	corneg = Ycor(Ytr,1);
+	if (prefix == 'H') {              //HMS 1-st 2 layers
+	  corpos = Ycor(Ytr,0);
+	  corneg = Ycor(Ytr,1);
+	}
+	else {                            //SHMS Preshower
+	  corpos = YcorPr(Ytr,0);
+	  corneg = YcorPr(Ytr,1);
+	}
       }
       else {
 	corpos = Ycor(Ytr);
 	corneg = 0.;
       }
 
+      // cout << ip << " clust energy pos = " <<  clEplane(cluster,ip,0)<< " clust energy neg = " <<  clEplane(cluster,ip,1) << endl;
       Etrk += clEplane(cluster,ip,0) * corpos;
       Etrk += clEplane(cluster,ip,1) * corneg;
 
@@ -983,6 +1149,7 @@ Float_t THcShower::GetShEnergy(THaTrack* Track) {
     cout << "---------------------------------------------------------------\n";
     cout << "Debug output from THcShower::GetShEnergy for "
 	 << GetApparatus()->GetName() << endl;
+    cout << " event = " << fEvent << endl;
 
     cout << "  Track at the calorimeter: X = " << Xtr << "  Y = " << Ytr;
     if (mclust >= 0)
@@ -990,6 +1157,7 @@ Float_t THcShower::GetShEnergy(THaTrack* Track) {
     else
       cout << ", no matched cluster found." << endl;
 
+    cout << "  Layers from " << L0+1 << " to " << L0+NLayers << ".\n";
     cout << "  Coordinate corrected track energy = " << Etrk << "." << endl;
     cout << "---------------------------------------------------------------\n";
   }
@@ -1005,24 +1173,60 @@ Int_t THcShower::FineProcess( TClonesArray& tracks )
   //
 
   Int_t Ntracks = tracks.GetLast()+1;   // Number of reconstructed tracks
-
+      Double_t Xtr = -100.;
+      Double_t Ytr = -100.;
   for (Int_t itrk=0; itrk<Ntracks; itrk++) {
-
     THaTrack* theTrack = static_cast<THaTrack*>( tracks[itrk] );
-
-    Float_t energy = GetShEnergy(theTrack);
-    theTrack->SetEnergy(energy);
-
+    if (theTrack->GetIndex()==0) {
+      fEtrack=theTrack->GetEnergy();
+      fEtrackNorm=fEtrack/theTrack->GetP();
+      fEPRtrack=GetShEnergy(theTrack,1);
+      fEPRtrackNorm=fEPRtrack/theTrack->GetP();
+      fETotTrackNorm=fEtot/theTrack->GetP();
+      Xtr = -100.;
+      Ytr = -100.;               
+      fNclustTrack = MatchCluster(theTrack, Xtr, Ytr);
+      fXTrack=Xtr;
+      fYTrack=Ytr;
+      if (fNclustTrack>=0) {
+	THcShowerCluster* cluster = *(fClusterList->begin()+fNclustTrack);
+	fXclustTrack=clX(cluster);
+        fYclustTrack=clY(cluster);
+      }
+      if (fHasArray) {
+	fNclustArrayTrack = fArray->MatchCluster(theTrack,Xtr,Ytr);      
+        if (fNclustArrayTrack>=0) {
+          fXclustArrayTrack=fArray->GetClX();
+          fYclustArrayTrack=fArray->GetClY();
+          fSizeClustArray=fArray->GetClSize();
+          fNblockHighEnergy=fArray->GetClMaxEnergyBlock();
+          fXTrackArray=Xtr;
+          fYTrackArray=Ytr;
+        }
+      }
+    }
   }       //over tracks
 
+  if (Ntracks>0) {
+    for(UInt_t ip=0;ip<fNLayers;ip++) {
+      fPlanes[ip]-> AccumulateStat(tracks);
+    }
+    if(fHasArray) fArray->AccumulateStat(tracks);
+  }
+  
   //Debug output.
 
   if (fdbg_tracks_cal) {
     cout << "---------------------------------------------------------------\n";
     cout << "Debug output from THcShower::FineProcess for "
 	 << GetApparatus()->GetName() << endl;
-
+    cout << " event = " << fEvent << endl;
     cout << "  Number of tracks = " << Ntracks << endl;
+    if (fNclustTrack>=0) {
+      cout << " matching cluster info " << endl;
+      cout << " X info = " << fXclustTrack << " " << Xtr << " " << fXclustTrack-Xtr << endl;
+      cout << " Y info = " << fYclustTrack << " " << Ytr << " " << fYclustTrack-Ytr << endl;
+    }
 
     for (Int_t itrk=0; itrk<Ntracks; itrk++) {
       THaTrack* theTrack = static_cast<THaTrack*>( tracks[itrk] );
@@ -1031,7 +1235,8 @@ Int_t THcShower::FineProcess( TClonesArray& tracks )
 	   << "  Y = " << theTrack->GetY()
 	   << "  Theta = " << theTrack->GetTheta()
 	   << "  Phi = " << theTrack->GetPhi()
-	   << "  Energy = " << theTrack->GetEnergy() << endl;
+	   << "  Energy = " << theTrack->GetEnergy() 
+	   << "  Energy/Ptrack = " <<  fEtrackNorm << endl;
     }
 
     cout << "---------------------------------------------------------------\n";
@@ -1042,7 +1247,13 @@ Int_t THcShower::FineProcess( TClonesArray& tracks )
 
 Double_t THcShower::GetNormETot( ){
   return fEtotNorm;
-} 
+}
+//_____________________________________________________________________________
+Int_t THcShower::End(THaRunBase* run)
+{
+  MissReport(Form("%s.%s", GetApparatus()->GetName(), GetName()));
+  return 0;
+}
 
 ClassImp(THcShower)
 ////////////////////////////////////////////////////////////////////////////////

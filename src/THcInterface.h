@@ -4,18 +4,18 @@
 //////////////////////////////////////////////////////////////////////////
 //
 // THcInterface
-// 
+//
 //////////////////////////////////////////////////////////////////////////
 
-#include "TRint.h"
+#include "THaInterface.h"
 
 class TClass;
 
-class THcInterface : public TRint {
+class THcInterface : public THaInterface {
 
 public:
   THcInterface( const char* appClassName, int* argc, char** argv,
-		void* options = NULL, int numOptions = 0, 
+		void* options = NULL, int numOptions = 0,
 		Bool_t noLogo = kFALSE );
   virtual ~THcInterface();
 
@@ -24,11 +24,9 @@ public:
 #else
   virtual void PrintLogo(Bool_t lite = kFALSE);
 #endif
-  static TClass* GetDecoder();
-  static TClass* SetDecoder( TClass* c );
+  static const char* GetVersionString();
 
 protected:
-  static THcInterface*  fgAint;  //Pointer indicating that interface already exists
 
   ClassDef(THcInterface,0)  //Hall C Analyzer Interactive Interface
 };

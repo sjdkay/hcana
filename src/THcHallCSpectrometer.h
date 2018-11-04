@@ -16,7 +16,7 @@
 #include "THcHitList.h"
 #include "THcRawHodoHit.h"
 #include "THcScintillatorPlane.h"
-#include "THcShower.h"
+#include "THcDC.h"
 
 //#include "THaTrackingDetector.h"
 //#include "THcHitList.h"
@@ -34,19 +34,22 @@
 //class THaScintillator;
 
 class THcHallCSpectrometer : public THaSpectrometer {
-  
+
 public:
   THcHallCSpectrometer( const char* name, const char* description );
   virtual ~THcHallCSpectrometer();
 
   virtual Int_t   ReadDatabase( const TDatime& date );
   virtual void    EnforcePruneLimits();
+  virtual void    CalculateTargetQuantities(THaTrack* track,Double_t& gbeam_y,Double_t&  xptar,Double_t& ytar,Double_t& yptar,Double_t& delta);
   virtual Int_t   FindVertices( TClonesArray& tracks );
   virtual Int_t   TrackCalc();
   virtual Int_t   BestTrackSimple();
   virtual Int_t   BestTrackUsingScin();
   virtual Int_t   BestTrackUsingPrune();
   virtual Int_t   TrackTimes( TClonesArray* tracks );
+
+  virtual Int_t   Decode( const THaEvData& );
 
   virtual Int_t   ReadRunDatabase( const TDatime& date );
   virtual Int_t  DefineVariables( EMode mode = kDefine );
@@ -58,6 +61,13 @@ public:
   Double_t GetParticleMass() const {return fPartMass; }
   Double_t GetBetaAtPcentral() const { return
       fPcentral/TMath::Sqrt(fPcentral*fPcentral+fPartMass*fPartMass);}
+
+  virtual void AddEvtType(int evtype);
+  virtual void SetEvtType(int evtype);
+  virtual Bool_t IsMyEvent(Int_t evtype) const;
+  virtual Int_t GetNumTypes() { return eventtypes.size(); };
+  virtual Bool_t IsPresent() {return fPresent;};
+
 
 protected:
   void InitializeReconstruction();
@@ -75,6 +85,7 @@ protected:
   Double_t     fPruneChiBeta;
   Double_t     fPruneFpTime;
   Double_t     fPruneNPMT;
+  Double_t     fSatCorr;
 
   Int_t        fGoodTrack;
   Int_t        fSelUsingScin;
@@ -99,8 +110,8 @@ protected:
 
   //  Int_t**   fHodScinHit;                // [4] Array
 
-  THcShower* fShower;
   THcHodoscope* fHodo;
+  THcDC* fDC;
 
   Int_t fNReconTerms;
   struct reconTerm {
@@ -129,14 +140,20 @@ protected:
   Double_t fPhiOffset; // Zero order term in xptar optics matrix (rad)
   Double_t fDeltaOffset; // Zero order term in delta optics matrix (%)
   Double_t fThetaCentralOffset; // Offset of Central spectrometer angle (rad)
-  Double_t fOopCentralOffset; //Offset of central out-of-plane angle (rad) 
+  Double_t fOopCentralOffset; //Offset of central out-of-plane angle (rad)
   Double_t fPCentralOffset; // Offset Central spectrometer momentum (%)
   Double_t fTheta_lab; // Central spectrometer angle (deg)
+  Double_t fPhi_lab; // Central spectrometer angle (deg)
+  Double_t fMispointing_x; // Spectrometer Verticcal Mispointing
+  Double_t fMispointing_y; // Spectrometer Horizontal Mispointing
   // For spectrometer central momentum use fPcentral in THaSpectrometer.h
   //  THaScintillator *sc_ref;  // calculate time track hits this plane
 
   // Flag for fProperties indicating that tracks are to be sorted by chi2
   static const UInt_t kSortTracks = BIT(16);
+
+  std::vector<Int_t> eventtypes;
+  Bool_t fPresent;
 
   ClassDef(THcHallCSpectrometer,0) //A Hall C Spectrometer
 };

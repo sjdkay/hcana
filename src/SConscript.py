@@ -6,27 +6,7 @@ import re
 import SCons.Util
 Import('pbaseenv')
 
-list = Split("""
-THcInterface.cxx THcParmList.cxx THcAnalyzer.cxx \
-THcHallCSpectrometer.cxx \
-THcDetectorMap.cxx \
-THcRawHit.cxx THcHitList.cxx \
-THcSignalHit.cxx \
-THcHodoscope.cxx THcScintillatorPlane.cxx \
-THcRawHodoHit.cxx \
-THcDC.cxx THcDriftChamberPlane.cxx \
-THcDriftChamber.cxx \
-THcRawDCHit.cxx THcDCHit.cxx \
-THcDCWire.cxx \
-THcSpacePoint.cxx THcDCTrack.cxx \
-THcDCLookupTTDConv.cxx THcDCTimeToDistConv.cxx \
-THcShower.cxx THcShowerPlane.cxx \
-THcRawShowerHit.cxx \
-THcAerogel.cxx THcAerogelHit.cxx \
-THcCherenkov.cxx THcCherenkovHit.cxx \
-THcFormula.cxx \
-THcRaster.cxx THcRasteredBeam.cxx THcRasterRawHit.cxx
-""")
+list = Glob('*.cxx', exclude=['main.C'])
 
 pbaseenv.Object('main.C')
 
@@ -44,13 +24,12 @@ localmajorcleantarget = '../'+linkbase+'.so'
 print('cleantarget = %s\n' % cleantarget)
 print('localmajorcleantarget = %s\n' % localmajorcleantarget)
 try:
-	os.symlink(cleantarget,localmajorcleantarget)
+    os.symlink(cleantarget,localmajorcleantarget)
 except:
-	print " Continuing ... "
+    print (" Continuing ... ")
 
 Clean(srclib,cleantarget)
 Clean(srclib,localmajorcleantarget)
 
 #baseenv.Install('../',srclib)
 #baseenv.Alias('install',['../'])
-
