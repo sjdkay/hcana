@@ -33,6 +33,10 @@
 
 using namespace std;
 
+// For getting pedestals
+Int_t aero_evcntr, iccp, aero_pedhist[2][7][200], aero_first=0 ;
+Double_t aero_ped[2][7] ;
+
 //_____________________________________________________________________________
 THcAerogel::THcAerogel( const char* name, const char* description,
                         THaApparatus* apparatus ) :
@@ -686,8 +690,53 @@ Int_t THcAerogel::ApplyCorrections( void )
 //_____________________________________________________________________________
 Int_t THcAerogel::CoarseProcess( TClonesArray&  ) //tracks
 {
+
+  // this is for 12 gev pedestals
+  // clear pedestral histogram, set default at 120 until
+  // get enough events to override.
+  if(aero_first != 999) {
+    printf("Aero init peds\n") ;
+    for(Int_t ipmt=0 ; ipmt<7 ; ipmt++) {
+      aero_ped[0][ipmt]=120. ;
+      aero_ped[1][ipmt]=120. ;
+      for(iccp=0 ; iccp<200 ; iccp++) {
+	aero_pedhist[0][ipmt][iccp]=0 ;
+	aero_pedhist[1][ipmt][iccp]=0 ;
+      }
+    }
+    aero_evcntr = 0 ;
+    aero_first=999 ;
+  }
+
+  aero_evcntr++ ;
+  if(aero_evcntr == 1000) {
+    for(Int_t ipmt=0 ; ipmt<7 ; ipmt++) {
+      Int_t imax0=0 ;
+      Int_t imax1=0 ;
+      for(iccp=0 ; iccp<200 ; iccp++) {
+	// printf("aero ped %7d %2d %5d %5d\n",ipmt,iccp,
+	//  aero_pedhist[0][ipmt][iccp],
+	//  aero_pedhist[1][ipmt][iccp]) ;
+	if(aero_pedhist[0][ipmt][iccp]>imax0){
+	  imax0 = aero_pedhist[0][ipmt][iccp],
+	    aero_ped[0][ipmt]= 100. + 0.2 * iccp ;
+	}
+	if(aero_pedhist[1][ipmt][iccp]>imax1){
+	  imax1 = aero_pedhist[1][ipmt][iccp],
+	    aero_ped[1][ipmt]= 100. + 0.2 * iccp ;
+	}
+      }
+    }
+    printf("Set aerogel peds %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f \n",aero_ped[0][0],aero_ped[0][1],aero_ped[0][2],aero_ped[0][3],aero_ped[0][4],aero_ped[0][5],aero_ped[0][6]) ;
+    printf("Set aerogel peds %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f \n",aero_ped[1][0],aero_ped[1][1],aero_ped[1][2],aero_ped[1][3],aero_ped[1][4],aero_ped[1][5],aero_ped[1][6]) ;
+  }
+
   Double_t StartTime = 0.0;
-  if( fglHod ) StartTime = fglHod->GetStartTime();
+  Double_t OffsetTime = 0.0;
+  if( fglHod ) {
+    StartTime = fglHod->GetStartTime();
+    OffsetTime = fglHod->GetOffsetTime();
+  }
   //cout << " starttime = " << StartTime << endl;
     // Loop over the elements in the TClonesArray
     for(Int_t ielem = 0; ielem < frPosAdcPulseInt->GetEntries(); ielem++) {
@@ -698,10 +747,35 @@ Int_t THcAerogel::CoarseProcess( TClonesArray&  ) //tracks
       Double_t pulseIntRaw  = ((THcSignalHit*) frPosAdcPulseIntRaw->ConstructedAt(ielem))->GetData();
       Double_t pulseAmp     = ((THcSignalHit*) frPosAdcPulseAmp->ConstructedAt(ielem))->GetData();
       Double_t pulseTime    = ((THcSignalHit*) frPosAdcPulseTime->ConstructedAt(ielem))->GetData();
-      Double_t adctdcdiffTime = StartTime-pulseTime;
+      Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
       Bool_t   errorFlag    = ((THcSignalHit*) fPosAdcErrorFlag->ConstructedAt(ielem))->GetData();
       ////      Bool_t   pulseTimeCut = adctdcdiffTime > fAdcTimeWindowMin && adctdcdiffTime < fAdcTimeWindowMax;
       Bool_t   pulseTimeCut = adctdcdiffTime > fAdcPosTimeWindowMin[npmt] && adctdcdiffTime < fAdcPosTimeWindowMax[npmt];
+
+      // correct pulse if ped is large (meaning pulseAmp = -pulsePed)
+      if(pulsePed + pulseAmp < 0.1 ) {
+	Double_t pedcorr = pulseIntRaw - pulseInt ;
+	Double_t newpulseInt = pulseIntRaw - pedcorr *
+          aero_ped[1][npmt]/pulsePed ;
+	Double_t newpulseAmp = newpulseInt * 3.0 ;
+	if(aero_evcntr>99999999) printf("aero pos %8d %d %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f\n",
+	      aero_evcntr,errorFlag,pulsePed,aero_ped[1][npmt],
+	       pulseAmp,newpulseAmp,
+	       pulseInt,newpulseInt, pedcorr) ;
+	pulseAmp = newpulseAmp ;
+	pulseInt = newpulseInt ;
+	// try just using typical average value
+	pulseAmp = 100.  ;
+	pulseInt = 30. ;
+	errorFlag = kFALSE ;
+      }
+      //      if(pulsePed > 100) {
+      //printf("aero pos %7.1f %7.1f\n", pulseAmp, pulseInt) ;
+      //}
+      if(npmt > -1 && npmt<7 && pulsePed > 100. && pulsePed<140.){
+        iccp = (int) (5.*(pulsePed - 100.)) ;
+	aero_pedhist[1][npmt][iccp]++ ;
+      }
 
       // By default, the last hit within the timing cut will be considered "good"
      if (!errorFlag)
@@ -711,7 +785,7 @@ Int_t THcAerogel::CoarseProcess( TClonesArray&  ) //tracks
 
      if (!errorFlag && pulseTimeCut) {
     	fGoodPosAdcPed.at(npmt)         = pulsePed;
- 	//	cout << " out = " << npmt << " " <<   frPosAdcPulseInt->GetEntries() << " " <<fGoodPosAdcMult.at(npmt); 
+	//cout << " out = " << npmt << " " <<  frPosAdcPulseInt->GetEntries() << " " << fGoodPosAdcMult.at(npmt); 
     	fGoodPosAdcPulseInt.at(npmt)    = pulseInt;
     	fGoodPosAdcPulseIntRaw.at(npmt) = pulseIntRaw;
     	fGoodPosAdcPulseAmp.at(npmt)    = pulseAmp;
@@ -736,10 +810,32 @@ Int_t THcAerogel::CoarseProcess( TClonesArray&  ) //tracks
       Double_t pulseIntRaw  = ((THcSignalHit*) frNegAdcPulseIntRaw->ConstructedAt(ielem))->GetData();
       Double_t pulseAmp     = ((THcSignalHit*) frNegAdcPulseAmp->ConstructedAt(ielem))->GetData();
       Double_t pulseTime    = ((THcSignalHit*) frNegAdcPulseTime->ConstructedAt(ielem))->GetData();
-      Double_t adctdcdiffTime = StartTime-pulseTime;
+      Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
       Bool_t   errorFlag    = ((THcSignalHit*) fNegAdcErrorFlag->ConstructedAt(ielem))->GetData();
       ////      Bool_t   pulseTimeCut = adctdcdiffTime > fAdcTimeWindowMin && adctdcdiffTime < fAdcTimeWindowMax;
       Bool_t   pulseTimeCut = adctdcdiffTime > fAdcNegTimeWindowMin[npmt] && adctdcdiffTime < fAdcNegTimeWindowMax[npmt];
+      /*      printf("check %.1f %.1f %.1f %.1f\n",pulsePed,pulseInt,pulseIntRaw,
+	      pulseAmp) ; */
+      if(pulsePed + pulseAmp < 0.1 ) {
+	Double_t pedcorr = pulseIntRaw - pulseInt ;
+	Double_t newpulseInt = pulseIntRaw - pedcorr *
+          aero_ped[0][npmt]/pulsePed ;
+	Double_t newpulseAmp = newpulseInt * 3.0 ;
+	if(aero_evcntr>99999999) printf("aero neg %8d %d %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f %7.1f\n",
+	       aero_evcntr,errorFlag,pulsePed,aero_ped[1][npmt],
+	       pulseAmp,newpulseAmp,
+	       pulseInt,newpulseInt, pedcorr) ;
+	pulseAmp = newpulseAmp ;
+	pulseInt = newpulseInt ;
+	// try just using typical average value
+	pulseAmp = 100.  ;
+	pulseInt = 30. ;
+	errorFlag = kFALSE ;
+      }
+      if(npmt > -1 && npmt<7 && pulsePed > 100. && pulsePed<140.){
+        iccp = (int) (5*(pulsePed - 100.)) ;
+	aero_pedhist[0][npmt][iccp]++ ;
+      }
       if (!errorFlag)
       {
 	fGoodNegAdcMult.at(npmt) += 1;
@@ -931,6 +1027,7 @@ Int_t THcAerogel::FineProcess( TClonesArray& tracks )
 // Method for initializing pedestals in the 6 GeV era
 void THcAerogel::InitializePedestals()
 {
+
   fNPedestalEvents = 0;
   fMinPeds         = 0;                    // Do not calculate pedestals by default
 

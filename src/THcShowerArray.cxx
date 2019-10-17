@@ -872,7 +872,11 @@ void THcShowerArray::FillADC_Standard()
 void THcShowerArray::FillADC_DynamicPedestal()
 {
   Double_t StartTime = 0.0;
-  if( fglHod ) StartTime = fglHod->GetStartTime();
+  Double_t OffsetTime = 0.0;
+  if( fglHod ) {
+    StartTime = fglHod->GetStartTime();
+    OffsetTime = fglHod->GetOffsetTime();
+  }
   for (Int_t ielem=0;ielem<frAdcPulseInt->GetEntries();ielem++) {
     
     Int_t npad           = ((THcSignalHit*) frAdcPulseInt->ConstructedAt(ielem))->GetPaddleNumber() - 1;
@@ -881,7 +885,7 @@ void THcShowerArray::FillADC_DynamicPedestal()
     Double_t pulseInt    = ((THcSignalHit*) frAdcPulseInt->ConstructedAt(ielem))->GetData();
     Double_t pulseAmp    = ((THcSignalHit*) frAdcPulseAmp->ConstructedAt(ielem))->GetData();
     Double_t pulseTime   = ((THcSignalHit*) frAdcPulseTime->ConstructedAt(ielem))->GetData();
-    Double_t adctdcdiffTime = StartTime-pulseTime;
+    Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
     Bool_t errorflag     = ((THcSignalHit*) frAdcErrorFlag->ConstructedAt(ielem))->GetData();
     Bool_t pulseTimeCut  = (adctdcdiffTime > fAdcTimeWindowMin[npad]) &&  (adctdcdiffTime < fAdcTimeWindowMax[npad]);
 

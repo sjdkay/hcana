@@ -65,6 +65,14 @@ void THcCoinTime::Clear( Option_t* opt )
   fROC2_ePosCoinTime=kBig;
   fROC1_RAW_CoinTime=kBig;
   fROC2_RAW_CoinTime=kBig;
+  fTRIG1_ePosCoinTime=kBig;
+  fTRIG4_ePosCoinTime=kBig;
+  fTRIG1_ePiCoinTime=kBig;
+  fTRIG4_ePiCoinTime=kBig;
+  fTRIG1_eKCoinTime=kBig;
+  fTRIG4_eKCoinTime=kBig;
+  fTRIG1_epCoinTime=kBig;
+  fTRIG4_epCoinTime=kBig;
 }
 
 //_____________________________________________________________________________

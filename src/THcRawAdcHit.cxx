@@ -304,7 +304,7 @@ Int_t THcRawAdcHit::GetRawData(UInt_t iPulse) const {
 }
 
 Double_t THcRawAdcHit::GetAverage(UInt_t iSampleLow, UInt_t iSampleHigh) const {
-  if (iSampleHigh >= fNSamples || iSampleLow >= fNSamples) {
+   if (iSampleHigh >= fNSamples || iSampleLow >= fNSamples) {
     TString msg = TString::Format(
       "`THcRawAdcHit::GetAverage`: not this many samples available!"
     );

@@ -441,7 +441,11 @@ Int_t THcCherenkov::ApplyCorrections( void )
 Int_t THcCherenkov::CoarseProcess( TClonesArray&  )
 {
   Double_t StartTime = 0.0;
-  if( fglHod ) StartTime = fglHod->GetStartTime();
+  Double_t OffsetTime = 0.0;
+  if( fglHod ) {
+    StartTime = fglHod->GetStartTime();
+    OffsetTime = fglHod->GetOffsetTime();
+  }
   for(Int_t ipmt = 0; ipmt < fNelem; ipmt++) {
     fAdcPulseAmpTest[ipmt] = -1000.;
     fAdcGoodElem[ipmt]=-1;
@@ -451,9 +455,16 @@ Int_t THcCherenkov::CoarseProcess( TClonesArray&  )
     Int_t    npmt         = ((THcSignalHit*) frAdcPulseInt->ConstructedAt(ielem))->GetPaddleNumber() - 1;
     Double_t pulseTime    = ((THcSignalHit*) frAdcPulseTime->ConstructedAt(ielem))->GetData();
     Double_t pulseAmp     = ((THcSignalHit*) frAdcPulseAmp->ConstructedAt(ielem))->GetData();
-   Double_t adctdcdiffTime = StartTime-pulseTime;
-     Bool_t   errorFlag    = ((THcSignalHit*) fAdcErrorFlag->ConstructedAt(ielem))->GetData();
+    Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
+    Bool_t   errorFlag    = ((THcSignalHit*) fAdcErrorFlag->ConstructedAt(ielem))->GetData();
     Bool_t   pulseTimeCut = adctdcdiffTime > fAdcTimeWindowMin[npmt] && adctdcdiffTime < fAdcTimeWindowMax[npmt];
+    // Override big ped events with average
+    //printf("cer amp %7.1f \n",pulseAmp) ;
+
+    if (errorFlag) {
+      pulseAmp = 100.;
+      errorFlag = kFALSE ;
+    } 
     if (!errorFlag)
       {
 	fGoodAdcMult.at(npmt) += 1;
@@ -470,9 +481,11 @@ Int_t THcCherenkov::CoarseProcess( TClonesArray&  )
     Double_t pulsePed     = ((THcSignalHit*) frAdcPed->ConstructedAt(ielem))->GetData();
     Double_t pulseInt     = ((THcSignalHit*) frAdcPulseInt->ConstructedAt(ielem))->GetData();
     Double_t pulseIntRaw  = ((THcSignalHit*) frAdcPulseIntRaw->ConstructedAt(ielem))->GetData();
-    Double_t pulseAmp     = ((THcSignalHit*) frAdcPulseAmp->ConstructedAt(ielem))->GetData();
+    //    Double_t pulseAmp     = ((THcSignalHit*) frAdcPulseAmp->ConstructedAt(ielem))->GetData();
+    // use value from above in case was overwritten
+    Double_t pulseAmp     =   fAdcPulseAmpTest[npmt] ;
     Double_t pulseTime    = ((THcSignalHit*) frAdcPulseTime->ConstructedAt(ielem))->GetData();
-   Double_t adctdcdiffTime = StartTime-pulseTime;
+    Double_t adctdcdiffTime = StartTime + OffsetTime -pulseTime;
     // By default, the last hit within the timing cut will be considered "good"
       fGoodAdcPed.at(npmt)         = pulsePed;
       fGoodAdcHitUsed.at(npmt)         = ielem+1;

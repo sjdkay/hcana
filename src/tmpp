@@ -1,0 +1,25 @@
+
+
+Double_t THcRawAdcHit::GetPed() const {
+  return (static_cast<Double_t>(fPed)/static_cast<Double_t>(fNPedestalSamples))*GetAdcTomV();
+}
+
+Double_t THcRawAdcHit::GetPulseAmp(UInt_t iPulse) const {
+  return (static_cast<Double_t>(fPulseAmp[iPulse]) - static_cast<Double_t>(fPed)/static_cast<Double_t>(fNPedestalSamples))*GetAdcTomV();
+}
+
+Int_t THcRawAdcHit::GetPulseAmpRaw(UInt_t iPulse) const {
+  if (iPulse < fNPulses) {
+    return fPulseAmp[iPulse];
+  }
+  else if (iPulse == 0) {
+    return 0;
+  }
+  else {
+    TString msg = TString::Format(
+      "`THcRawAdcHit::GetPulseAmpRaw`: Trying to get pulse %d where only %d pulses available!",
+      iPulse, fNPulses
+    );
+    throw std::out_of_range(msg.Data());
+  }
+}

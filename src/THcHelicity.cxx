@@ -370,25 +370,25 @@ Int_t THcHelicity::Decode( const THaEvData& evdata )
 	  if((abs(fQuartet[0]+fQuartet[3]-fQuartet[1]-fQuartet[2])==4)) {
 	    if(!fFoundQuartet) {
 	      //	      fFirstCycle = fNCycle - 3;
-	      cout << "Quartet potentially found, starting at cycle " << fFirstCycle
-		   << " - event " << evdata.GetEvNum() << endl;
+	      //cout << "Quartet potentially found, starting at cycle " << fFirstCycle
+	      //	   << " - event " << evdata.GetEvNum() << endl;
 	      fFoundQuartet = kTRUE;
 	    }
 	  } else {
 	    if(fNCycle - fFirstCycle > 4) { // Not at start of run.  Reset
-	      cout << "Lost quartet sync at cycle " << fNCycle << " - event "
-		   << evdata.GetEvNum() << endl;
-	      cout << fQuartet[0] << " "  << fQuartet[1] << " "  << fQuartet[2] << " "
-		   << fQuartet[3] << endl;
+	      //cout << "Lost quartet sync at cycle " << fNCycle << " - event "
+	      //	   << evdata.GetEvNum() << endl;
+	      //cout << fQuartet[0] << " "  << fQuartet[1] << " "  << fQuartet[2] << " "
+	      //   << fQuartet[3] << endl;
 	      
 	      fFirstCycle += 4*((fNCycle-fFirstCycle)/4); // Update, but don't change phase
 	    }
 	    fFoundQuartet = kFALSE;
 	    fNBits = 0;
-	    cout << "Searching for first of a quartet at cycle " << " " << fFirstCycle
-		 << " - event " << evdata.GetEvNum() << endl;
-	    cout << fQuartet[0] << " "  << fQuartet[1] << " "  << fQuartet[2] << " "
-		 << fQuartet[3] << endl;
+	    //	    cout << "Searching for first of a quartet at cycle " << " " << fFirstCycle
+	    // << " - event " << evdata.GetEvNum() << endl;
+	    //cout << fQuartet[0] << " "  << fQuartet[1] << " "  << fQuartet[2] << " "
+	    //	 << fQuartet[3] << endl;
 	    fFirstCycle++;
 	  }
 	}
@@ -475,7 +475,7 @@ void THcHelicity::LoadHelicity(Int_t reportedhelicity, Int_t cyclecount, Int_t m
   if(quartetphase == 0) { // Start of a quad
     if(fNBits < fMAXBIT) {
       if(fNBits == 0) {
-	cout << "Start calibrating at cycle " << cyclecount << endl;
+	//cout << "Start calibrating at cycle " << cyclecount << endl;
 	fRingSeed_reported = 0;
       }
       if(fReportedHelicity == kPlus) {
@@ -488,9 +488,9 @@ void THcHelicity::LoadHelicity(Int_t reportedhelicity, Int_t cyclecount, Int_t m
 	fNBits = 0;
 	fRingSeed_reported = 0;
       } else if (fNBits==fMAXBIT) {
-	cout << "Seed Found " << hex << fRingSeed_reported << dec << " at cycle " << cyclecount << " with first cycle " << fFirstCycle << endl;
+	//cout << "Seed Found " << hex << fRingSeed_reported << dec << " at cycle " << cyclecount << " with first cycle " << fFirstCycle << endl;
 	Int_t backseed = GetSeed30(fRingSeed_reported);
-	cout << "Seed at cycle " << fFirstCycle << " should be " << hex << backseed << dec << endl;
+	//cout << "Seed at cycle " << fFirstCycle << " should be " << hex << backseed << dec << endl;
       }
       fActualHelicity = kUnknown;
     } else if (fNBits >= fMAXBIT) {

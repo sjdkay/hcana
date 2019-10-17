@@ -37,10 +37,13 @@ class THcScintillatorPlane : public THaSubDetector {
           Bool_t   IsTracking() { return kFALSE; }
   virtual Bool_t   IsPid()      { return kFALSE; }
 
-  virtual Int_t ProcessHits(TClonesArray* rawhits, Int_t nexthit);
+  virtual Int_t ProcessHits(TClonesArray* rawhits, 
+    Int_t nexthit, Double_t timeoffsetbest);
 
   virtual Int_t AccumulatePedestals(TClonesArray* rawhits, Int_t nexthit);
   virtual void  CalculatePedestals( );
+  virtual Int_t ProcessHitsForTime(TClonesArray* rawhits, 
+    Int_t nexthit, Double_t timeoffset);
 
   Int_t GetNelem() {return fNelem;}; // return number of paddles in this plane
   Int_t GetNScinHits() {return fNScinHits;}; // Get # hits in plane (that pass min/max TDC cuts)
@@ -63,6 +66,8 @@ class THcScintillatorPlane : public THaSubDetector {
   void SetFpTime(Double_t f) {fFptime=f;};
   void SetNGoodHits(Int_t ng) {fNGoodHits=ng;};
   void SetHitDistance(Double_t f) {fHitDistance=f;}; // Distance between track and hit paddle
+  void SetTranversePos(Double_t f) {fScinTranversePos=f;}; // Scint Average transverse position at plane (cm)
+  void SetLongPos(Double_t f) {fScinLongPos=f;}; // Scint Average transverse position at plane (cm)
   void SetTrackXPosition(Double_t f) {fTrackXPosition=f;}; // Distance track X position at plane
   void SetTrackYPosition(Double_t f) {fTrackYPosition=f;}; // Distance track Y position at plane
   void SetNumberClusters(Int_t nclus) {fNumberClusters=nclus;}; // number of paddle 
@@ -180,6 +185,8 @@ class THcScintillatorPlane : public THaSubDetector {
 
   Int_t fDebugAdc;
   Double_t fHitDistance;
+  Double_t fScinTranversePos;
+  Double_t fScinLongPos;
   Double_t fTrackXPosition;
   Double_t fTrackYPosition;
   Int_t fCosmicFlag; //

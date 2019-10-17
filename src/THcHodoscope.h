@@ -54,6 +54,7 @@ public:
   void TrackEffTest(void);
   virtual Int_t      ApplyCorrections( void );
   Double_t GetStartTime() const { return fStartTime; }
+  Double_t GetOffsetTime() const { return fOffsetTime; }
   Bool_t IsStartTimeGood() const {return fGoodStartTime;};
   Int_t GetNfptimes() const {return fNfptimes;};
   Int_t GetScinIndex(Int_t nPlane, Int_t nPaddle);
@@ -155,6 +156,7 @@ protected:
   Bool_t fSHMS;
   Bool_t fGoodStartTime;
   Double_t fStartTime;
+  Double_t fOffsetTime;
   Double_t fFPTimeAll;
   Int_t fNfptimes;
   Bool_t* fPresentP;
@@ -230,6 +232,7 @@ protected:
 
   Int_t        fCheckEvent;
   Int_t        fEventType;
+  Int_t        fEventNum;
 
   Int_t        fGoodTrack;
   Double_t     fScin2XZpos;
@@ -276,6 +279,9 @@ protected:
   Int_t fSweet1YScin;
   Int_t fSweet2XScin;
   Int_t fSweet2YScin;
+
+  Double_t fhodo_time_peak1, fhodo_time_peak2, 
+           fhodo_time_hits1, fhodo_time_hits2 ;
 
   //  Double_t**   fScinHit;                // [fNPlanes] Array
 
@@ -339,6 +345,7 @@ protected:
     Double_t zcor;
     Double_t scinTrnsCoord;
     Double_t scinLongCoord;
+    Double_t scinCenter;
     Int_t planeIndex;
     Int_t hitNumInPlane;
     THcHodoHit *hit;
@@ -373,6 +380,10 @@ protected:
   std::vector<Int_t > fNClust;		                // # scins clusters for the plane
   std::vector<std::vector<Int_t> > fClustSize;		                // # scin cluster size
   std::vector<std::vector<Double_t> > fClustPos;		                // # scin cluster position
+  std::vector<Int_t > fNCluster;		                // # scins clusters for the plane
+  std::vector<std::vector<Int_t> > fClusterSize;		                // # scin cluster size
+  std::vector<std::vector<Double_t> > fClusterXPos;		                // # scin cluster position
+  std::vector<std::vector<Double_t> > fClusterYPos;		                // # scin cluster position
   std::vector<Int_t > fThreeScin;	                // # scins three clusters for the plane
   std::vector<Int_t > fGoodScinHitsX;                   // # hits in fid x range
   // Could combine the above into a structure

@@ -743,7 +743,11 @@ void THcShowerPlane::FillADC_Standard()
 void THcShowerPlane::FillADC_DynamicPedestal()
 {
   Double_t StartTime = 0.0;
-  if( fglHod ) StartTime = fglHod->GetStartTime();
+  Double_t OffsetTime = 0.0;
+  if( fglHod ) {
+    StartTime = fglHod->GetStartTime();
+    OffsetTime = fglHod->GetOffsetTime();
+  }
   for (Int_t ielem=0;ielem<frNegAdcPulseInt->GetEntries();ielem++) {
    Int_t    npad         = ((THcSignalHit*) frNegAdcPulseInt->ConstructedAt(ielem))->GetPaddleNumber() - 1;
    Double_t pulseInt     = ((THcSignalHit*) frNegAdcPulseInt->ConstructedAt(ielem))->GetData();
@@ -751,7 +755,7 @@ void THcShowerPlane::FillADC_DynamicPedestal()
     Double_t pulseAmp     = ((THcSignalHit*) frNegAdcPulseAmp->ConstructedAt(ielem))->GetData();
     Double_t pulseIntRaw  = ((THcSignalHit*) frNegAdcPulseIntRaw->ConstructedAt(ielem))->GetData();
     Double_t pulseTime    = ((THcSignalHit*) frNegAdcPulseTime->ConstructedAt(ielem))->GetData();
-    Double_t adctdcdiffTime = StartTime-pulseTime;
+    Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
     Double_t threshold    = ((THcSignalHit*) frNegAdcThreshold->ConstructedAt(ielem))->GetData();
     Bool_t   errorflag    = ((THcSignalHit*) frNegAdcErrorFlag->ConstructedAt(ielem))->GetData();
     Bool_t   pulseTimeCut = (adctdcdiffTime > static_cast<THcShower*>(fParent)->GetWindowMin(npad,fLayerNum-1,1)) && (adctdcdiffTime < static_cast<THcShower*>(fParent)->GetWindowMax(npad,fLayerNum-1,1) );
@@ -793,7 +797,7 @@ void THcShowerPlane::FillADC_DynamicPedestal()
     Double_t pulseInt     = ((THcSignalHit*) frPosAdcPulseInt->ConstructedAt(ielem))->GetData();
     Double_t pulseIntRaw  = ((THcSignalHit*) frPosAdcPulseIntRaw->ConstructedAt(ielem))->GetData();
     Double_t pulseTime    = ((THcSignalHit*) frPosAdcPulseTime->ConstructedAt(ielem))->GetData();
-     Double_t adctdcdiffTime = StartTime-pulseTime;
+     Double_t adctdcdiffTime = StartTime + OffsetTime - pulseTime;
    Bool_t   errorflag    = ((THcSignalHit*) frPosAdcErrorFlag->ConstructedAt(ielem))->GetData();
    Bool_t   pulseTimeCut = (adctdcdiffTime > static_cast<THcShower*>(fParent)->GetWindowMin(npad,fLayerNum-1,0)) && (adctdcdiffTime < static_cast<THcShower*>(fParent)->GetWindowMax(npad,fLayerNum-1,0) );
 

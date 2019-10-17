@@ -242,7 +242,7 @@ Int_t THcTrigDet::Decode(const THaEvData& evData) {
     present = *fPresentP;
   }
   Int_t numHits = DecodeToHitList(evData, !present);
-
+  //cout << " event num = " << evData.GetEvNum()  << endl;
   // Process each hit and fill variables.
   Int_t iHit = 0;
   while (iHit < numHits) {
@@ -252,14 +252,17 @@ Int_t THcTrigDet::Decode(const THaEvData& evData) {
     if (hit->fPlane == 1) {
       THcRawAdcHit rawAdcHit = hit->GetRawAdcHit();
       fAdcMultiplicity[cnt] = rawAdcHit.GetNPulses();
+      //if (cnt+1 ==14) cout << " chan = " << cnt+1 << " fadc mult = "<< fAdcMultiplicity[cnt] << endl;
       UInt_t good_hit=999;
           for (UInt_t thit=0; thit<rawAdcHit.GetNPulses(); ++thit) {
 	    Int_t TestTime=rawAdcHit.GetPulseTimeRaw(thit);
+	    //if (cnt+1 == 14) cout << " fadc time = "<< TestTime<< " " << fAdcTimeWindowMin[cnt] << " " << fAdcTimeWindowMax[cnt] << endl;
 	    if (TestTime>fAdcTimeWindowMin[cnt]&&TestTime<fAdcTimeWindowMax[cnt]&&good_hit==999) {
 	      good_hit=thit;
 	    }
 	  }
 	 if (good_hit<rawAdcHit.GetNPulses()) {
+	   //if (cnt+1 ==14) cout << " select fadc time = " << good_hit << " " << rawAdcHit.GetPulseTimeRaw(good_hit)<< endl;
        fAdcPedRaw[cnt] = rawAdcHit.GetPedRaw();
        fAdcPulseIntRaw[cnt] = rawAdcHit.GetPulseIntRaw(good_hit);
        fAdcPulseAmpRaw[cnt] = rawAdcHit.GetPulseAmpRaw(good_hit);
@@ -268,21 +271,37 @@ Int_t THcTrigDet::Decode(const THaEvData& evData) {
        fAdcPed[cnt] = rawAdcHit.GetPed();
        fAdcPulseInt[cnt] = rawAdcHit.GetPulseInt(good_hit);
        fAdcPulseAmp[cnt] = rawAdcHit.GetPulseAmp(good_hit);
+	 } else {
+	   //if (cnt+1 == 14) cout << " no hit picked" << endl;
 	 }
     }
     else if (hit->fPlane == 2) {
       THcRawTdcHit rawTdcHit = hit->GetRawTdcHit();
 
       UInt_t good_hit=999;
+      UInt_t close_hit=999;
+      UInt_t close_min=100000;
            for (UInt_t thit=0; thit<rawTdcHit.GetNHits(); ++thit) {
 	    Int_t TestTime= rawTdcHit.GetTimeRaw(thit);
 	    if (TestTime>fTdcTimeWindowMin[cnt]&&TestTime<fTdcTimeWindowMax[cnt]&&good_hit==999) {
 	      good_hit=thit;
 	    }
+	    if (abs(TestTime-fTdcTimeWindowMin[cnt]) < close_min && TestTime<fTdcTimeWindowMax[cnt]) {
+	      close_min=abs(TestTime-fTdcTimeWindowMin[cnt]);
+	      close_hit=thit;
+	    }
 	   }
 	 if (good_hit<rawTdcHit.GetNHits()) {
       fTdcTimeRaw[cnt] = rawTdcHit.GetTimeRaw(good_hit);
       fTdcTime[cnt] = rawTdcHit.GetTime(good_hit)*fTdcChanperNS+fTdcOffset;
+	 } else {
+	   if (close_hit<rawTdcHit.GetNHits()) {
+                 fTdcTimeRaw[cnt] = rawTdcHit.GetTimeRaw(close_hit);
+                 fTdcTime[cnt] = rawTdcHit.GetTime(close_hit)*fTdcChanperNS+fTdcOffset;
+	   } else {
+              fTdcTimeRaw[cnt] = rawTdcHit.GetTimeRaw(rawTdcHit.GetNHits()-1);
+              fTdcTime[cnt] = rawTdcHit.GetTime(rawTdcHit.GetNHits()-1)*fTdcChanperNS+fTdcOffset;
+	   }
 	 }
       fTdcMultiplicity[cnt] = rawTdcHit.GetNHits();
     }
